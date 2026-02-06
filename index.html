@@ -1,0 +1,1000 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>JabRef references</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<script type="text/javascript">
+<!--
+// QuickSearch script for JabRef HTML export (no Abstract/BibTeX)
+// Version: 3.0
+//
+// Copyright (c) 2006-2011, Mark Schenk
+//
+// This software is distributed under a Creative Commons Attribution 3.0 License
+// http://creativecommons.org/licenses/by/3.0/
+//
+// Features:
+// - intuitive find-as-you-type searching
+//    ~ case insensitive
+//    ~ ignore diacritics (optional)
+//
+// - search with/without Regular Expressions
+// - match BibTeX key
+//
+
+// Search settings
+var noSquiggles = true; 	// ignore diacritics when searching
+var searchRegExp = false; 	// enable RegExp searches
+
+
+if (window.addEventListener) {
+	window.addEventListener("load",initSearch,false); }
+else if (window.attachEvent) {
+	window.attachEvent("onload", initSearch); }
+
+function initSearch() {
+	// check for quick search table and searchfield
+	if (!document.getElementById('qs_table')||!document.getElementById('quicksearch')) { return; }
+
+	// load all the rows and sort into arrays
+	loadTableData();
+	
+	//find the query field
+	qsfield = document.getElementById('qs_field');
+
+	// previous search term; used for speed optimisation
+	prevSearch = '';
+
+	//find statistics location
+	stats = document.getElementById('stat');
+	setStatistics(-1);
+	
+	// set up preferences
+	initPreferences();
+
+	// shows the searchfield
+	document.getElementById('quicksearch').style.display = 'block';
+	document.getElementById('qs_field').onkeyup = quickSearch;
+}
+
+function loadTableData() {
+	// find table and appropriate rows
+	searchTable = document.getElementById('qs_table');
+	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+	// split all rows into entryRows and infoRows (e.g. abstract, comment, bibtex)
+	entryRows = new Array();
+
+	// get data from each row
+	entryRowsData = new Array();
+	
+	BibTeXKeys = new Array();
+	
+	for (var i=0, k=0, j=0; i<allRows.length;i++) {
+		if (allRows[i].className.match(/entry/)) {
+			entryRows[j] = allRows[i];
+			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
+			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
+			j ++;
+		}
+	}
+	//number of entries and rows
+	numEntries = entryRows.length;
+}
+
+function quickSearch(){
+	
+	tInput = qsfield;
+
+	if (tInput.value.length == 0) {
+		showAll();
+		setStatistics(-1);
+		qsfield.className = '';
+		return;
+	} else {
+		t = stripDiacritics(tInput.value);
+
+		if(!searchRegExp) { t = escapeRegExp(t); }
+			
+		// only search for valid RegExp
+		try {
+			textRegExp = new RegExp(t,"i");
+			qsfield.className = '';
+		}
+			catch(err) {
+			prevSearch = tInput.value;
+			qsfield.className = 'invalidsearch';
+			return;
+		}
+	}
+	
+	// count number of hits
+	var hits = 0;
+
+	// start looping through all entry rows
+	for (var i = 0; cRow = entryRows[i]; i++){
+
+		// only show search the cells if it isn't already hidden OR if the search term is getting shorter, then search all
+		if(cRow.className.indexOf('noshow')==-1 || tInput.value.length <= prevSearch.length){
+			var found = false; 
+
+			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
+				found = true;
+			}
+			
+			if (found){
+				cRow.className = 'entry show';
+				hits++;
+			} else {
+				cRow.className = 'entry noshow';
+			}
+		}
+	}
+
+	// update statistics
+	setStatistics(hits)
+	
+	// set previous search value
+	prevSearch = tInput.value;
+}
+
+
+// Strip Diacritics from text
+// http://stackoverflow.com/questions/990904/javascript-remove-accents-in-strings
+
+// String containing replacement characters for stripping accents 
+var stripstring = 
+    'AAAAAAACEEEEIIII'+
+    'DNOOOOO.OUUUUY..'+
+    'aaaaaaaceeeeiiii'+
+    'dnooooo.ouuuuy.y'+
+    'AaAaAaCcCcCcCcDd'+
+    'DdEeEeEeEeEeGgGg'+
+    'GgGgHhHhIiIiIiIi'+
+    'IiIiJjKkkLlLlLlL'+
+    'lJlNnNnNnnNnOoOo'+
+    'OoOoRrRrRrSsSsSs'+
+    'SsTtTtTtUuUuUuUu'+
+    'UuUuWwYyYZzZzZz.';
+
+function stripDiacritics(str){
+
+    if(noSquiggles==false){
+        return str;
+    }
+
+    var answer='';
+    for(var i=0;i<str.length;i++){
+        var ch=str[i];
+        var chindex=ch.charCodeAt(0)-192;   // Index of character code in the strip string
+        if(chindex>=0 && chindex<stripstring.length){
+            // Character is within our table, so we can strip the accent...
+            var outch=stripstring.charAt(chindex);
+            // ...unless it was shown as a '.'
+            if(outch!='.')ch=outch;
+        }
+        answer+=ch;
+    }
+    return answer;
+}
+
+// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
+// NOTE: must escape every \ in the export code because of the JabRef Export...
+function escapeRegExp(str) {
+  return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function setStatistics (hits) {
+	if(hits < 0) { hits=numEntries; }
+	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
+}
+
+function getTextContent(node) {
+	// Function written by Arve Bersvendsen
+	// http://www.virtuelvis.com
+	
+	if (node.nodeType == 3) {
+	return node.nodeValue;
+	} // text node
+	if (node.nodeType == 1 && node.className != "infolinks") { // element node
+	var text = [];
+	for (var chld = node.firstChild;chld;chld=chld.nextSibling) {
+		text.push(getTextContent(chld));
+	}
+	return text.join("");
+	} return ""; // some other node, won't contain text nodes.
+}
+
+function showAll(){
+	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function clearQS() {
+	qsfield.value = '';
+	showAll();
+}
+
+function redoQS(){
+	showAll();
+	quickSearch(qsfield);
+}
+
+function updateSetting(obj){
+	var option = obj.id;
+	var checked = obj.value;
+
+	switch(option)
+	 {
+	 case "opt_useRegExp":
+	   searchRegExp=!searchRegExp;
+	   redoQS();
+	   break;
+	 case "opt_noAccents":
+	   noSquiggles=!noSquiggles;
+	   loadTableData();
+	   redoQS();
+	   break;
+	 }
+}
+
+function initPreferences(){
+	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
+	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+}
+
+function toggleSettings(){
+	var togglebutton = document.getElementById('showsettings');
+	var settings = document.getElementById('settings');
+	
+	if(settings.className == "hidden"){
+		settings.className = "show";
+		togglebutton.innerText = "close settings";
+		togglebutton.textContent = "close settings";
+	}else{
+		settings.className = "hidden";
+		togglebutton.innerText = "settings...";		
+		togglebutton.textContent = "settings...";
+	}
+}
+
+-->
+</script>
+<style type="text/css">
+body { background-color: white; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.2; padding: 1em; color: #2E2E2E; margin: auto 2em; }
+
+form#quicksearch { width: auto; border-style: solid; border-color: gray; border-width: 1px 0px; padding: 0.7em 0.5em; display:none; position:relative; }
+span#searchstat {padding-left: 1em;}
+
+div#settings { margin-top:0.7em; /* border-bottom: 1px transparent solid; background-color: #efefef; border: 1px grey solid; */ }
+div#settings ul {margin: 0; padding: 0; }
+div#settings li {margin: 0; padding: 0 1em 0 0; display: inline; list-style: none; }
+div#settings li + li { border-left: 2px #efefef solid; padding-left: 0.5em;}
+div#settings input { margin-bottom: 0px;}
+
+div#settings.hidden {display:none;}
+
+#showsettings { border: 1px grey solid; padding: 0 0.5em; float:right; line-height: 1.6em; text-align: right; }
+#showsettings:hover { cursor: pointer; }
+
+.invalidsearch { background-color: red; }
+input[type="button"] { background-color: #efefef; border: 1px #2E2E2E solid;}
+
+table { width: 100%; empty-cells: show; border-spacing: 0em 0.2em; margin: 1em 0em; border-style: none; }
+th, td { border: 1px gray solid; border-width: 1px 1px; padding: 0.5em; vertical-align: top; text-align: left; }
+th { background-color: #efefef; }
+td + td, th + th { border-left: none; }
+
+td a { color: navy; text-decoration: none; }
+td a:hover  { text-decoration: underline; }
+
+tr.noshow { display: none;}
+tr.highlight td { background-color: #EFEFEF; border-top: 2px #2E2E2E solid; font-weight: bold; }
+tr.abstract td, tr.comment td, tr.bibtex td { background-color: #EFEFEF; text-align: justify; border-bottom: 2px #2E2E2E solid; }
+tr.nextshow td { border-bottom: 1px gray solid; }
+
+tr.bibtex pre { width: 100%; overflow: auto; white-space: pre-wrap;}
+p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
+
+@media print {
+	p.infolinks, #qs_settings, #quicksearch, t.bibtex { display: none !important; }
+	tr { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<form action="" id="quicksearch">
+<input type="text" id="qs_field" autocomplete="off" placeholder="Type to search..." /> <input type="button" onclick="clearQS()" value="clear" />
+<span id="searchstat">Matching entries: <span id="stat">0</span></span>
+<div id="showsettings" onclick="toggleSettings()">settings...</div>
+<div id="settings" class="hidden">
+<ul>
+<li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
+</ul>
+</div>
+</form>
+<table id="qs_table" border="1">
+<thead><tr><th width="20%">Author</th><th width="30%">Title</th><th width="5%">Year</th><th width="30%">Journal/Proceedings</th><th width="10%">Reftype</th><th width="5%">DOI/URL</th></tr></thead>
+<tbody><tr id="Fu2023" class="entry">
+	<td>Fu, M. and Tantithamthavorn, C.</td>
+	<td>GPT2SP: A Transformer-Based Agile Story Point Estimation Approach</td>
+	<td>2023</td>
+	<td>IEEE Transactions on Software Engineering<br/>Vol. 49(2), pp. 611-625&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1109/TSE.2022.3158252">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Obie2022" class="entry">
+	<td>Obie, H.O., Ilekura, I., Du, H., Shahin, M., Grundy, J., Li, L., Whittle, J. and Turhan, B.</td>
+	<td>On the Violation of Honesty in Mobile Apps: Automated Detection and Categories</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 19th International Conference on Mining Software Repositories (MSR), pp. 321-332&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3524842.3527937">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Pasuksmit2022" class="entry">
+	<td>Pasuksmit, J., Thongtanunam, P. and Karunasekera, S.</td>
+	<td>Towards Reliable Agile Iterative Planning via Predicting Documentation Changes of Work Items</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 19th International Conference on Mining Software Repositories (MSR), pp. 35-47&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3524842.3528445">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Haering2021" class="entry">
+	<td>Haering, M., Stanik, C. and Maalej, W.</td>
+	<td>Automatically Matching Bug Reports With Related App Reviews</td>
+	<td>2021</td>
+	<td>2021 IEEE/ACM 43rd International Conference on Software Engineering (ICSE), pp. 970-981&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSE43902.2021.00092">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Kula2021" class="entry">
+	<td>Kula, E., Deursen, A.v. and Gousios, G.</td>
+	<td>Modeling Team Dynamics for the Characterization and Prediction of Delays in User Stories</td>
+	<td>2021</td>
+	<td>2021 36th IEEE/ACM International Conference on Automated Software Engineering (ASE), pp. 991-1002&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ASE51524.2021.9678939">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Shahin2023" class="entry">
+	<td>Shahin, M., Zahedi, M., Khalajzadeh, H. and Rezaei Nasab, A.</td>
+	<td>A Study of Gender Discussions in Mobile Apps</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 598-610&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00086">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Nema2022" class="entry">
+	<td>Nema, P., Anthonysamy, P., Taft, N. and Peddinti, S.T.</td>
+	<td>Analyzing User Perspectives on Mobile App Privacy at Scale</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 112-124&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3510003.3510079">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Khalajzadeh2023" class="entry">
+	<td>Khalajzadeh, H., Shahin, M., Obie, H.O., Agrawal, P. and Grundy, J.</td>
+	<td>Supporting Developers in Addressing Human-Centric Issues in Mobile Apps</td>
+	<td>2023</td>
+	<td>IEEE Transactions on Software Engineering<br/>Vol. 49(4), pp. 2149-2168&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1109/TSE.2022.3212329">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Wang2022" class="entry">
+	<td>Wang, Y., Wang, J., Zhang, H., Ming, X., Shi, L. and Wang, Q.</td>
+	<td>Where is Your App Frustrating Users?</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 2427-2439&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3510003.3510189">DOI</a> &nbsp;</td>
+</tr>
+<tr id="BaniYusuf2023" class="entry">
+	<td>Bani Yusuf, I.N., Binte Abdul Jamal, D. and Jiang, L.</td>
+	<td>Automating Arduino Programming: From Hardware Setups to Sample Source Code Generation</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 453-464&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00069">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Vargovich2023" class="entry">
+	<td>Vargovich, J., Santos, F., Penney, J., Gerosa, M.A. and Steinmacher, I.</td>
+	<td>GiveMeLabeledIssues: An Open Source Issue Recommendation System</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 402-406&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00061">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Tony2023" class="entry">
+	<td>Tony, C., Mutas, M., Ferreyra, N.E.D. and Scandariato, R.</td>
+	<td>LLMSecEval: A Dataset of Natural Language Prompts for Security Evaluations</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 588-592&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00084">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Wang2021" class="entry">
+	<td>Wang, J., Zhang, X. and Chen, L.</td>
+	<td>How well do pre-trained contextual language representations recommend labels for GitHub issues?</td>
+	<td>2021</td>
+	<td>Knowledge-Based Systems<br/>Vol. 232, pp. 107476&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1016/j.knosys.2021.107476">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Izadi2022" class="entry">
+	<td>Izadi, M., Akbari, K. and Heydarnoori, A.</td>
+	<td>Predicting the objective and priority of issue reports in software repositories</td>
+	<td>2022</td>
+	<td>Empirical Software Engineering<br/>Vol. 27(2), pp. 50&nbsp;</td>
+	<td>article</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="Ahmed2023" class="entry">
+	<td>Ahmed, T., Ghosh, S., Bansal, C., Zimmermann, T., Zhang, X. and Rajmohan, S.</td>
+	<td>Recommending Root-Cause and Mitigation Steps for Cloud Incidents using Large Language Models</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE), pp. 1737-1749&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSE48619.2023.00149">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Saberi2023" class="entry">
+	<td>Saberi, I. and Fard, F.H.</td>
+	<td>Model-Agnostic Syntactical Information for Pre-Trained Programming Language Models</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 183-193&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00036">DOI</a> &nbsp;</td>
+</tr>
+<tr id="ClairineIrsan2023" class="entry">
+	<td>Clairine Irsan, I., Zhang, T., Thung, F., Kim, K. and Lo, D.</td>
+	<td>Picaso: Enhancing API Recommendations with Relevant Stack Overflow Posts</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 92-103&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00025">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Kang2021" class="entry">
+	<td>Kang, Y., Wang, Z., Zhang, H., Chen, J. and You, H.</td>
+	<td>APIRecX: Cross-Library API Recommendation via Pre-Trained Language Model</td>
+	<td>2021</td>
+	<td>Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 3425-3436&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2021.emnlp-main.275">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Wei2022" class="entry">
+	<td>Wei, M., Harzevili, N.S., Huang, Y., Wang, J. and Wang, S.</td>
+	<td>CLEAR: Contrastive Learning for API Recommendation</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 376-387&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3510003.3510159">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Diamantopoulos2023" class="entry">
+	<td>Diamantopoulos, T., Nastos, D.-N. and Symeonidis, A.</td>
+	<td>Semantically-enriched Jira Issue Tracking Data</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 218-222&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00039">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Rabbi2024" class="entry">
+	<td>Rabbi, M.F., Champa, A., Zibran, M. and Islam, M.R.</td>
+	<td>AI Writes, We Analyze: The ChatGPT Python Code Saga</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 177-181&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3645076">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Castano2024" class="entry">
+	<td>Castaño, J., Martínez-Fernández, S., Franch, X. and Bogner, J.</td>
+	<td>Analyzing the Evolution and Maintenance of ML Models on Hugging Face</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 607-618&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644898">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Sarwar2020" class="entry">
+	<td>Sarwar, M.U., Zafar, S., Mkaouer, M.W., Walia, G.S. and Malik, M.Z.</td>
+	<td>Multi-label Classification of Commit Messages using Transfer Learning</td>
+	<td>2020</td>
+	<td>2020 IEEE International Symposium on Software Reliability Engineering Workshops (ISSREW), pp. 37-42&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ISSREW51248.2020.00034">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Wu2024" class="entry">
+	<td>Wu, L., Zhao, Y., Hou, X., Liu, T. and Wang, H.</td>
+	<td>ChatGPT Chats Decoded: Uncovering Prompt Patterns for Superior Solutions in Software Development Lifecycle</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 142-146&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3645069">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Champa2024" class="entry">
+	<td>Champa, A.I., Rabbi, M.F., Nachuma, C. and Zibran, M.F.</td>
+	<td>ChatGPT in Action: Analyzing Its Use in Software Development</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 182-186&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3645077">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Nikeghbal2024" class="entry">
+	<td>Nikeghbal, N., Kargaran, A.H. and Heydarnoori, A.</td>
+	<td>GIRT-Model: Automated Generation of Issue Report Templates</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 407-418&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644906">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Zhang2022" class="entry">
+	<td>Zhang, T., Irsan, I.C., Thung, F., Han, D., Lo, D. and Jiang, L.</td>
+	<td>Automatic Pull Request Title Generation</td>
+	<td>2022</td>
+	<td>2022 IEEE International Conference on Software Maintenance and Evolution (ICSME), pp. 71-81&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSME55016.2022.00015">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Siddiq2022" class="entry">
+	<td>Siddiq, M.L. and Santos, J.C.S.</td>
+	<td>BERT-Based GitHub Issue Report Classification</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 33-36&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3528588.3528660">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Izadi2022a" class="entry">
+	<td>Izadi, M.</td>
+	<td>CatIss: An Intelligent Tool for Categorizing Issues Reports using Transformers</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 44-47&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3528588.3528662">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Colavito2023" class="entry">
+	<td>Colavito, G., Lanubile, F. and Novielli, N.</td>
+	<td>Few-Shot Learning for Issue Report Classification</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 2nd International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 16-19&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/NLBSE59153.2023.00011">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Schick2021" class="entry">
+	<td>Schick, T. and Sch&uuml;tze, H.</td>
+	<td>Generating Datasets with Pretrained Language Models</td>
+	<td>2021</td>
+	<td>Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 6943-6951&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2021.emnlp-main.555">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Bharadwaj2022" class="entry">
+	<td>Bharadwaj, S. and Kadam, T.</td>
+	<td>GitHub Issue Classification Using BERT-Style Models</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 40-43&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3528588.3528663">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Wang2022a" class="entry">
+	<td>Wang, J., Zhang, X., Chen, L. and Xie, X.</td>
+	<td>Personalizing label prediction for GitHub issues</td>
+	<td>2022</td>
+	<td>Information and Software Technology<br/>Vol. 145, pp. 106845&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1016/j.infsof.2022.106845">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Zhang2022a" class="entry">
+	<td>Zhang, T., Irsan, I.C., Thung, F., Han, D., Lo, D. and Jiang, L.</td>
+	<td>iTiger: an automatic issue title generation tool</td>
+	<td>2022</td>
+	<td>Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering, pp. 1637–1641&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3540250.3558934">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Lin2024" class="entry">
+	<td>Lin, H.Y., Thongtanunam, P., Treude, C. and Charoenwet, W.</td>
+	<td>Improving Automated Code Reviews: Learning from Experience</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 278-283&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644910">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Ehsani2024" class="entry">
+	<td>Ehsani, R., Imran, M.M., Zita, R., Damevski, K. and Chatterjee, P.</td>
+	<td>Incivility in Open Source Projects: A Comprehensive Annotated Dataset of Locked GitHub Issue Threads</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 515-519&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644887">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Colavito2024" class="entry">
+	<td>Colavito, G., Lanubile, F., Novielli, N. and Quaranta, L.</td>
+	<td>Leveraging GPT-like LLMs to Automate Issue Labeling</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 469-480&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644903">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Colavito2022" class="entry">
+	<td>Colavito, G., Lanubile, F. and Novielli, N.</td>
+	<td>Issue Report Classification Using Pre-trained Language Models</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 29-32&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3528588.3528659">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Alhindi2023" class="entry">
+	<td>Alhindi, W., Aleid, A., Jenhani, I. and Mkaouer, M.W.</td>
+	<td>Issue-Labeler: an ALBERT-based Jira Plugin for Issue Classification</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 10th International Conference on Mobile Software Engineering and Systems (MOBILESoft), pp. 40-43&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MOBILSoft59058.2023.00012">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Zhang2025" class="entry">
+	<td>Zhang, T., Irsan, I.C., Thung, F. and Lo, D.</td>
+	<td>Revisiting Sentiment Analysis for Software Engineering in the Era of Large Language Models</td>
+	<td>2025</td>
+	<td>ACM Trans. Softw. Eng. Methodol.<br/>Vol. 34(3)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3697009">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Alsayed2024" class="entry">
+	<td>Alsayed, A.S., Khanh Dam, H. and Nguyen, C.</td>
+	<td>MicroRec: Leveraging Large Language Models for Microservice Recommendation</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 419-430&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644916">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Sarker2023" class="entry">
+	<td>Sarker, J., Turzo, A.K., Dong, M. and Bosu, A.</td>
+	<td>Automated Identification of Toxic Code Reviews Using ToxiCR</td>
+	<td>2023</td>
+	<td><br/>Vol. 32(5)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3583562">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Cheriyan2021" class="entry">
+	<td>Cheriyan, J., Savarimuthu, B.T.R. and Cranefield, S.</td>
+	<td>Towards offensive language detection and reduction in four Software Engineering communities</td>
+	<td>2021</td>
+	<td>Proceedings of the 25th International Conference on Evaluation and Assessment in Software Engineering, pp. 254–259&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3463274.3463805">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Sagdic2024" class="entry">
+	<td>Sagdic, E., Bayram, A. and Islam, M.R.</td>
+	<td>On the Taxonomy of Developers’ Discussion Topics with ChatGPT</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 197-201&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3645080">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Jiang2024" class="entry">
+	<td>Jiang, W., Yasmin, J., Jones, J., Synovic, N., Kuo, J., Bielanski, N., Tian, Y., Thiruvathukal, G.K. and Davis, J.C.</td>
+	<td>PeaTMOSS: A Dataset and Initial Analysis of Pre-Trained Models in Open-Source Software</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 431-443&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644907">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Jiang2025" class="entry">
+	<td>Jiang, W., Kim, M., Cheung, C., Kim, H., Thiruvathukal, G.K. and Davis, J.C.</td>
+	<td>“I see models being a whole other thing”: an empirical study of pre-trained model naming conventions and a tool for enhancing naming consistency</td>
+	<td>2025</td>
+	<td>Empirical Software Engineering<br/>Vol. 30(6), pp. 155&nbsp;</td>
+	<td>article</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="Sutoyo2024" class="entry">
+	<td>Sutoyo, E. and Capiluppi, A.</td>
+	<td>SATDAUG - A Balanced and Augmented Dataset for Detecting Self-Admitted Technical Debt</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 289-293&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644880">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Dai2025" class="entry">
+	<td>Dai, H., Liu, Z., Liao, W., Huang, X., Cao, Y., Wu, Z., Zhao, L., Xu, S., Zeng, F., Liu, W., Liu, N., Li, S., Zhu, D., Cai, H., Sun, L., Li, Q., Shen, D., Liu, T. and Li, X.</td>
+	<td>AugGPT: Leveraging ChatGPT for Text Data Augmentation</td>
+	<td>2025</td>
+	<td>IEEE Transactions on Big Data<br/>Vol. 11(3), pp. 907-918&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1109/TBDATA.2025.3536934">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Sutoyo2024a" class="entry">
+	<td>Sutoyo, E., Avgeriou, P. and Capiluppi, A.</td>
+	<td>Deep Learning and Data Augmentation for Detecting Self-Admitted Technical Debt</td>
+	<td>2024</td>
+	<td>2024 31st Asia-Pacific Software Engineering Conference (APSEC), pp. 01-10&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/APSEC65559.2024.00022">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Yang2020" class="entry">
+	<td>Yang, Y., Malaviya, C., Fernandez, J., Swayamdipta, S., Le Bras, R., Wang, J.-P., Bhagavatula, C., Choi, Y. and Downey, D.</td>
+	<td>Generative Data Augmentation for Commonsense Reasoning</td>
+	<td>2020</td>
+	<td>Findings of the Association for Computational Linguistics: EMNLP 2020, pp. 1008-1025&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2020.findings-emnlp.90">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Preda2024" class="entry">
+	<td>Preda, A.-R., Mayr-Dorn, C., Mashkoor, A. and Egyed, A.</td>
+	<td>Supporting High-Level to Low-Level Requirements Coverage Reviewing with Large Language Models</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 242-253&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644922">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Ezzini2023" class="entry">
+	<td>Ezzini, S., Abualhaija, S., Arora, C. and Sabetzadeh, M.</td>
+	<td>AI-based Question Answering Assistance for Analyzing Natural-language Requirements</td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE), pp. 1277-1289&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSE48619.2023.00113">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Liu2024" class="entry">
+	<td>Liu, K., Han, Y., Liu, Y., Zhang, J.M., Chen, Z., Sarro, F., Huang, G. and Ma, Y.</td>
+	<td>TrickyBugs: A Dataset of Corner-case Bugs in Plausible Programs</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 113-117&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644870">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Idialu2024" class="entry">
+	<td>Idialu, O.J., Mathews, N.S., Maipradit, R., Atlee, J.M. and Nagappan, M.</td>
+	<td>Whodunit: Classifying Code as Human Authored or GPT-4 generated- A case study on CodeChef problems</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 394-406&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644926">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Nguyen2025" class="entry">
+	<td>Nguyen, T., Gill, W. and Gulzar, M.A.</td>
+	<td>Are the Majority of Public Computational Notebooks Pathologically Non-Executable?</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 396-407&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00070">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Jaoua2025" class="entry">
+	<td>Jaoua, I., Sghaier, O.B. and Sahraoui, H.</td>
+	<td>Combining Large Language Models with Static Analyzers for Code Review Generation</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 174-186&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00038">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Wadhwa2024" class="entry">
+	<td>Wadhwa, N., Pradhan, J., Sonwane, A., Sahu, S.P., Natarajan, N., Kanade, A., Parthasarathy, S. and Rajamani, S.</td>
+	<td>CORE: Resolving Code Quality Issues using LLMs</td>
+	<td>2024</td>
+	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3643762">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Lu2023" class="entry">
+	<td>Lu, J., Yu, L., Li, X., Yang, L. and Zuo, C.</td>
+	<td>LLaMA-Reviewer: Advancing Code Review Automation with Large Language Models through Parameter-Efficient Fine-Tuning</td>
+	<td>2023</td>
+	<td>2023 IEEE 34th International Symposium on Software Reliability Engineering (ISSRE), pp. 647-658&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ISSRE59848.2023.00026">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Tufano2022" class="entry">
+	<td>Tufano, R., Masiero, S., Mastropaolo, A., Pascarella, L., Poshyvanyk, D. and Bavota, G.</td>
+	<td>Using Pre-Trained Models to Boost Code Review Automation</td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 2291-2302&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3510003.3510621">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Galimzyanov2025" class="entry">
+	<td>Galimzyanov, T., Titov, S., Golubev, Y. and Bogomolov, E.</td>
+	<td>Drawing Pandas: A Benchmark for LLMs in Generating Plotting Code</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 503-507&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00083">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Wu2025" class="entry">
+	<td>Wu, C., Liang, Z., Ge, Y., Guo, Q., Lu, Z., Wang, J., Shan, Y. and Luo, P.</td>
+	<td>Plot2Code: A Comprehensive Benchmark for Evaluating Multi-modal Large Language Models in Code Generation from Scientific Plots</td>
+	<td>2025</td>
+	<td>Findings of the Association for Computational Linguistics: NAACL 2025, pp. 3006-3028&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2025.findings-naacl.164">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Chakraborty2025" class="entry">
+	<td>Chakraborty, M., Pirkelbauer, P. and Yi, Q.</td>
+	<td>FormalSpecCpp: A Dataset of C++ Formal Specifications created using LLMs</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 758-762&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00113">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Aranovich2022" class="entry">
+	<td>Aranovich, R., Wu, M., Yu, D., Katsy, K., Ahmadnia, B., Bishop, M., Filkov, V. and Sagae, K.</td>
+	<td>Beyond NVD: Cybersecurity meets the Semantic Web.</td>
+	<td>2022</td>
+	<td>Proceedings of the 2021 New Security Paradigms Workshop, pp. 59–69&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3498891.3501259">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Sghaier2025" class="entry">
+	<td>Sghaier, O.B., Weyssow, M. and Sahraoui, H.</td>
+	<td>Harnessing Large Language Models for Curated Code Reviews</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 187-198&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00039">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Ahmed2025" class="entry">
+	<td>Ahmed, F., Tan, X., Adewole, F., Datta, S. and Nayebi, M.</td>
+	<td>Inferring Questions from Programming Screenshots</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 750-755&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00111">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Bhat2023" class="entry">
+	<td>Bhat, M.M., Meng, R., Liu, Y., Zhou, Y. and Yavuz, S.</td>
+	<td>Investigating Answerability of LLMs for Long-Form Question Answering</td>
+	<td>2023</td>
+	<td>arXiv preprint arXiv:2309.08210&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.48550/arXiv.2309.08210">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Tayeb2025" class="entry">
+	<td>Tayeb, A.J. and Haiduc, S.</td>
+	<td>Intelligent Semantic Matching (ISM) for Video Tutorial Search using Transformer Models</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 712-724&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00108">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Yang2022" class="entry">
+	<td>Yang, C., Thung, F. and Lo, D.</td>
+	<td>Efficient Search of Live-Coding Screencasts from Online Videos</td>
+	<td>2022</td>
+	<td>2022 IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER), pp. 73-77&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/SANER53432.2022.00021">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Malkadi2023" class="entry">
+	<td>Malkadi, A., Tayeb, A. and Haiduc, S.</td>
+	<td>Improving Code Extraction from Coding Screencasts Using a Code-Aware Encoder-Decoder Model</td>
+	<td>2023</td>
+	<td>2023 38th IEEE/ACM International Conference on Automated Software Engineering (ASE), pp. 1492-1504&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ASE56229.2023.00184">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Rahman2025" class="entry">
+	<td>Rahman, M.S., Codabux, Z. and Roy, C.K.</td>
+	<td>Investigating the Understandability of Review Comments on Code Change Requests</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 539-551&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00087">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Rahman2024" class="entry">
+	<td>Rahman, M.S., Codabux, Z. and Roy, C.K.</td>
+	<td>Do Words Have Power? Understanding and Fostering Civility in Code Review Discussion</td>
+	<td>2024</td>
+	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3660780">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Yang2023" class="entry">
+	<td>Yang, L., Xu, J., Zhang, Y., Zhang, H. and Bacchelli, A.</td>
+	<td>EvaCRC: Evaluating Code Review Comments</td>
+	<td>2023</td>
+	<td>Proceedings of the 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering, pp. 275–287&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3611643.3616245">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Rahman2022" class="entry">
+	<td>Rahman, S., Koana, U.A. and Nayebi, M.</td>
+	<td>Example Driven Code Review Explanation</td>
+	<td>2022</td>
+	<td>Proceedings of the 16th ACM / IEEE International Symposium on Empirical Software Engineering and Measurement, pp. 307–312&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3544902.3546639">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Tafreshipour2025" class="entry">
+	<td>Tafreshipour, M., Imani, A., Huang, E., Almeida, E.S.d., Zimmermann, T. and Ahmed, I.</td>
+	<td>Prompting in the Wild: An Empirical Study of Prompt Evolution in Software Repositories</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 686-698&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00106">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Li2024" class="entry">
+	<td>Li, J., Raheja, V. and Kumar, D.</td>
+	<td>ContraDoc: Understanding Self-Contradictions in Documents with Large Language Models</td>
+	<td>2024</td>
+	<td>Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers), pp. 6509-6523&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2024.naacl-long.362">DOI</a> &nbsp;</td>
+</tr>
+<tr id="2024" class="entry">
+	<td>Li, J., Farag&oacute;, D., Petrov, C. and Ahmed, I.</td>
+	<td>Only diff Is Not Enough: Generating Commit Messages Leveraging Reasoning and Action of Large Language Model</td>
+	<td>2024</td>
+	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3643760">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Pister2024" class="entry">
+	<td>Pister, K., Paul, D.J., Brophy, P. and Joshi, I.</td>
+	<td>PromptSet: A Programmer’s Prompting Dataset</td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM International Workshop on Large Language Models for Code (LLM4Code), pp. 62-69&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643795.3648395">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Henkel2021" class="entry">
+	<td>Henkel, J., Silva, D., Teixeira, L., d’Amorim , M. and Reps, T.</td>
+	<td>Shipwright: A Human-in-the-Loop System for Dockerfile Repair</td>
+	<td>2021</td>
+	<td>2021 IEEE/ACM 43rd International Conference on Software Engineering: Companion Proceedings (ICSE-Companion), pp. 198-199&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSE-Companion52605.2021.00087">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Abedu2025" class="entry">
+	<td>Abedu, S., Menneron, L., Khatoonabadi, S. and Shihab, E.</td>
+	<td>RepoChat: An LLM-Powered Chatbot for GitHub Repository Question-Answering</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 255-259&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00045">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Abedu2024" class="entry">
+	<td>Abedu, S., Abdellatif, A. and Shihab, E.</td>
+	<td>LLM-Based Chatbots for Mining Software Repositories: Challenges and Opportunities</td>
+	<td>2024</td>
+	<td>Proceedings of the 28th International Conference on Evaluation and Assessment in Software Engineering, pp. 201–210&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3661167.3661218">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Abedu2024a" class="entry">
+	<td>Abedu, S., Khatoonabadi, S. and Shihab, E.</td>
+	<td>Synergizing LLMs and Knowledge Graphs: A Novel Approach to Software Repository-Related Question Answering</td>
+	<td>2024</td>
+	<td>arXiv preprint arXiv:2412.03815&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.48550/arXiv.2412.03815">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Alves2025" class="entry">
+	<td>Alves, A. and Hora, A.</td>
+	<td>TestMigrationsInPy: A Dataset of Test Migrations from Unittest to Pytest</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 841-845&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00122">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Liu2025" class="entry">
+	<td>Liu, C., Lin, H.Y. and Thongtanunam, P.</td>
+	<td>Too Noisy To Learn: Enhancing Data Quality for Code Review Comment Generation</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 236-248&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00043">DOI</a> &nbsp;</td>
+</tr>
+<tr id="Ehsani2025" class="entry">
+	<td>Ehsani, R., Pathak, S. and Chatterjee, P.</td>
+	<td>Towards Detecting Prompt Knowledge Gaps for Improved LLM-guided Issue Resolution</td>
+	<td>2025</td>
+	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 699-711&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR66628.2025.00107">DOI</a> &nbsp;</td>
+</tr>
+</tbody>
+</table>
+<footer>
+ <small>Created by <a href="https://www.jabref.org">JabRef</a> on 2026/02/06.</small>
+</footer>
+
+<!-- file generated by JabRef -->
+
+</body>
+</html>
