@@ -5,7 +5,7 @@
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <script type="text/javascript">
 <!--
-// QuickSearch script for JabRef HTML export (no Abstract/BibTeX)
+// QuickSearch script for JabRef HTML export 
 // Version: 3.0
 //
 // Copyright (c) 2006-2011, Mark Schenk
@@ -23,6 +23,9 @@
 //
 
 // Search settings
+var searchAbstract = true;	// search in abstract
+var searchComment = true;	// search in comment
+
 var noSquiggles = true; 	// ignore diacritics when searching
 var searchRegExp = false; 	// enable RegExp searches
 
@@ -63,10 +66,10 @@ function loadTableData() {
 	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
 
 	// split all rows into entryRows and infoRows (e.g. abstract, comment, bibtex)
-	entryRows = new Array();
+	entryRows = new Array(); infoRows = new Array(); absRows = new Array(); revRows = new Array();
 
 	// get data from each row
-	entryRowsData = new Array();
+	entryRowsData = new Array(); absRowsData = new Array(); revRowsData = new Array(); 
 	
 	BibTeXKeys = new Array();
 	
@@ -76,10 +79,23 @@ function loadTableData() {
 			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
 			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
 			j ++;
+		} else {
+			infoRows[k++] = allRows[i];
+			// check for abstract/comment
+			if (allRows[i].className.match(/abstract/)) {
+				absRows.push(allRows[i]);
+				absRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			} else if (allRows[i].className.match(/comment/)) {
+				revRows.push(allRows[i]);
+				revRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			}
 		}
 	}
 	//number of entries and rows
 	numEntries = entryRows.length;
+	numInfo = infoRows.length;
+	numAbs = absRows.length;
+	numRev = revRows.length;
 }
 
 function quickSearch(){
@@ -99,6 +115,7 @@ function quickSearch(){
 		// only search for valid RegExp
 		try {
 			textRegExp = new RegExp(t,"i");
+			closeAllInfo();
 			qsfield.className = '';
 		}
 			catch(err) {
@@ -120,6 +137,13 @@ function quickSearch(){
 
 			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
 				found = true;
+			} else {
+				if(searchAbstract && absRowsData[i]!=undefined) {
+					if (absRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+				if(searchComment && revRowsData[i]!=undefined) {
+					if (revRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
 			}
 			
 			if (found){
@@ -184,6 +208,48 @@ function escapeRegExp(str) {
   return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
 }
 
+function toggleInfo(articleid,info) {
+
+	var entry = document.getElementById(articleid);
+	var abs = document.getElementById('abs_'+articleid);
+	var rev = document.getElementById('rev_'+articleid);
+	var bib = document.getElementById('bib_'+articleid);
+	
+	if (abs && info == 'abstract') {
+		abs.className.indexOf('noshow') == -1?abs.className = 'abstract noshow':abs.className = 'abstract show';
+	} else if (rev && info == 'comment') {
+		rev.className.indexOf('noshow') == -1?rev.className = 'comment noshow':rev.className = 'comment show';
+	} else if (bib && info == 'bibtex') {
+		bib.className.indexOf('noshow') == -1?bib.className = 'bibtex noshow':bib.className = 'bibtex show';
+	} else { 
+		return;
+	}
+
+	// check if one or the other is available
+	var revshow; var absshow; var bibshow;
+	(abs && abs.className.indexOf('noshow') == -1)? absshow = true: absshow = false;
+	(rev && rev.className.indexOf('noshow') == -1)? revshow = true: revshow = false;	
+	(bib && bib.className.indexOf('noshow') == -1)? bibshow = true: bibshow = false;
+	
+	// highlight original entry
+	if(entry) {
+		if (revshow || absshow || bibshow) {
+		entry.className = 'entry highlight show';
+		} else {
+		entry.className = 'entry show';
+		}
+	}
+	
+	// When there's a combination of abstract/comment/bibtex showing, need to add class for correct styling
+	if(absshow) {
+		(revshow||bibshow)?abs.className = 'abstract nextshow':abs.className = 'abstract';
+	} 
+	if (revshow) {
+		bibshow?rev.className = 'comment nextshow': rev.className = 'comment';
+	}	
+	
+}
+
 function setStatistics (hits) {
 	if(hits < 0) { hits=numEntries; }
 	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
@@ -206,7 +272,16 @@ function getTextContent(node) {
 }
 
 function showAll(){
+	closeAllInfo();
 	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function closeAllInfo(){
+	for (var i=0; i < numInfo; i++){
+		if (infoRows[i].className.indexOf('noshow') ==-1) {
+			infoRows[i].className = infoRows[i].className + ' noshow';
+		}
+	}
 }
 
 function clearQS() {
@@ -225,6 +300,14 @@ function updateSetting(obj){
 
 	switch(option)
 	 {
+	 case "opt_searchAbs":
+	   searchAbstract=!searchAbstract;
+	   redoQS();
+	   break;
+	 case "opt_searchRev":
+	   searchComment=!searchComment;
+	   redoQS();
+	   break;
 	 case "opt_useRegExp":
 	   searchRegExp=!searchRegExp;
 	   redoQS();
@@ -238,8 +321,13 @@ function updateSetting(obj){
 }
 
 function initPreferences(){
+	if(searchAbstract){document.getElementById("opt_searchAbs").checked = true;}
+	if(searchComment){document.getElementById("opt_searchRev").checked = true;}
 	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
 	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+	
+	if(numAbs==0) {document.getElementById("opt_searchAbs").parentNode.style.display = 'none';}
+	if(numRev==0) {document.getElementById("opt_searchRev").parentNode.style.display = 'none';}
 }
 
 function toggleSettings(){
@@ -309,6 +397,8 @@ p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
 <div id="showsettings" onclick="toggleSettings()">settings...</div>
 <div id="settings" class="hidden">
 <ul>
+<li><input type="checkbox" class="search_setting" id="opt_searchAbs" onchange="updateSetting(this)"><label for="opt_searchAbs"> include abstract</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_searchRev" onchange="updateSetting(this)"><label for="opt_searchRev"> include comment</label></li>
 <li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
 <li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
 </ul>
@@ -316,685 +406,1829 @@ p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
 </form>
 <table id="qs_table" border="1">
 <thead><tr><th width="20%">Author</th><th width="30%">Title</th><th width="5%">Year</th><th width="30%">Journal/Proceedings</th><th width="10%">Reftype</th><th width="5%">DOI/URL</th></tr></thead>
-<tbody><tr id="Fu2023" class="entry">
-	<td>Fu, M. and Tantithamthavorn, C.</td>
-	<td>GPT2SP: A Transformer-Based Agile Story Point Estimation Approach</td>
-	<td>2023</td>
-	<td>IEEE Transactions on Software Engineering<br/>Vol. 49(2), pp. 611-625&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1109/TSE.2022.3158252">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Obie2022" class="entry">
-	<td>Obie, H.O., Ilekura, I., Du, H., Shahin, M., Grundy, J., Li, L., Whittle, J. and Turhan, B.</td>
-	<td>On the Violation of Honesty in Mobile Apps: Automated Detection and Categories</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 19th International Conference on Mining Software Repositories (MSR), pp. 321-332&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3524842.3527937">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Pasuksmit2022" class="entry">
-	<td>Pasuksmit, J., Thongtanunam, P. and Karunasekera, S.</td>
-	<td>Towards Reliable Agile Iterative Planning via Predicting Documentation Changes of Work Items</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 19th International Conference on Mining Software Repositories (MSR), pp. 35-47&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3524842.3528445">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Haering2021" class="entry">
-	<td>Haering, M., Stanik, C. and Maalej, W.</td>
-	<td>Automatically Matching Bug Reports With Related App Reviews</td>
-	<td>2021</td>
-	<td>2021 IEEE/ACM 43rd International Conference on Software Engineering (ICSE), pp. 970-981&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ICSE43902.2021.00092">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Kula2021" class="entry">
-	<td>Kula, E., Deursen, A.v. and Gousios, G.</td>
-	<td>Modeling Team Dynamics for the Characterization and Prediction of Delays in User Stories</td>
-	<td>2021</td>
-	<td>2021 36th IEEE/ACM International Conference on Automated Software Engineering (ASE), pp. 991-1002&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ASE51524.2021.9678939">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Shahin2023" class="entry">
-	<td>Shahin, M., Zahedi, M., Khalajzadeh, H. and Rezaei Nasab, A.</td>
-	<td>A Study of Gender Discussions in Mobile Apps</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 598-610&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/MSR59073.2023.00086">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Nema2022" class="entry">
-	<td>Nema, P., Anthonysamy, P., Taft, N. and Peddinti, S.T.</td>
-	<td>Analyzing User Perspectives on Mobile App Privacy at Scale</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 112-124&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3510003.3510079">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Khalajzadeh2023" class="entry">
-	<td>Khalajzadeh, H., Shahin, M., Obie, H.O., Agrawal, P. and Grundy, J.</td>
-	<td>Supporting Developers in Addressing Human-Centric Issues in Mobile Apps</td>
-	<td>2023</td>
-	<td>IEEE Transactions on Software Engineering<br/>Vol. 49(4), pp. 2149-2168&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1109/TSE.2022.3212329">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Wang2022" class="entry">
-	<td>Wang, Y., Wang, J., Zhang, H., Ming, X., Shi, L. and Wang, Q.</td>
-	<td>Where is Your App Frustrating Users?</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 2427-2439&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3510003.3510189">DOI</a> &nbsp;</td>
-</tr>
-<tr id="BaniYusuf2023" class="entry">
-	<td>Bani Yusuf, I.N., Binte Abdul Jamal, D. and Jiang, L.</td>
-	<td>Automating Arduino Programming: From Hardware Setups to Sample Source Code Generation</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 453-464&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/MSR59073.2023.00069">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Vargovich2023" class="entry">
-	<td>Vargovich, J., Santos, F., Penney, J., Gerosa, M.A. and Steinmacher, I.</td>
-	<td>GiveMeLabeledIssues: An Open Source Issue Recommendation System</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 402-406&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/MSR59073.2023.00061">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Tony2023" class="entry">
-	<td>Tony, C., Mutas, M., Ferreyra, N.E.D. and Scandariato, R.</td>
-	<td>LLMSecEval: A Dataset of Natural Language Prompts for Security Evaluations</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 588-592&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/MSR59073.2023.00084">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Wang2021" class="entry">
-	<td>Wang, J., Zhang, X. and Chen, L.</td>
-	<td>How well do pre-trained contextual language representations recommend labels for GitHub issues?</td>
-	<td>2021</td>
-	<td>Knowledge-Based Systems<br/>Vol. 232, pp. 107476&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1016/j.knosys.2021.107476">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Izadi2022" class="entry">
-	<td>Izadi, M., Akbari, K. and Heydarnoori, A.</td>
-	<td>Predicting the objective and priority of issue reports in software repositories</td>
-	<td>2022</td>
-	<td>Empirical Software Engineering<br/>Vol. 27(2), pp. 50&nbsp;</td>
-	<td>article</td>
-	<td>&nbsp;</td>
-</tr>
-<tr id="Ahmed2023" class="entry">
-	<td>Ahmed, T., Ghosh, S., Bansal, C., Zimmermann, T., Zhang, X. and Rajmohan, S.</td>
-	<td>Recommending Root-Cause and Mitigation Steps for Cloud Incidents using Large Language Models</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE), pp. 1737-1749&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ICSE48619.2023.00149">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Saberi2023" class="entry">
-	<td>Saberi, I. and Fard, F.H.</td>
-	<td>Model-Agnostic Syntactical Information for Pre-Trained Programming Language Models</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 183-193&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/MSR59073.2023.00036">DOI</a> &nbsp;</td>
-</tr>
-<tr id="ClairineIrsan2023" class="entry">
-	<td>Clairine Irsan, I., Zhang, T., Thung, F., Kim, K. and Lo, D.</td>
-	<td>Picaso: Enhancing API Recommendations with Relevant Stack Overflow Posts</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 92-103&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/MSR59073.2023.00025">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Kang2021" class="entry">
-	<td>Kang, Y., Wang, Z., Zhang, H., Chen, J. and You, H.</td>
-	<td>APIRecX: Cross-Library API Recommendation via Pre-Trained Language Model</td>
-	<td>2021</td>
-	<td>Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 3425-3436&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.18653/v1/2021.emnlp-main.275">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Wei2022" class="entry">
-	<td>Wei, M., Harzevili, N.S., Huang, Y., Wang, J. and Wang, S.</td>
-	<td>CLEAR: Contrastive Learning for API Recommendation</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 376-387&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3510003.3510159">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Diamantopoulos2023" class="entry">
-	<td>Diamantopoulos, T., Nastos, D.-N. and Symeonidis, A.</td>
-	<td>Semantically-enriched Jira Issue Tracking Data</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 218-222&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/MSR59073.2023.00039">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Rabbi2024" class="entry">
-	<td>Rabbi, M.F., Champa, A., Zibran, M. and Islam, M.R.</td>
-	<td>AI Writes, We Analyze: The ChatGPT Python Code Saga</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 177-181&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3645076">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Castano2024" class="entry">
-	<td>Castaño, J., Martínez-Fernández, S., Franch, X. and Bogner, J.</td>
-	<td>Analyzing the Evolution and Maintenance of ML Models on Hugging Face</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 607-618&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644898">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Sarwar2020" class="entry">
-	<td>Sarwar, M.U., Zafar, S., Mkaouer, M.W., Walia, G.S. and Malik, M.Z.</td>
-	<td>Multi-label Classification of Commit Messages using Transfer Learning</td>
-	<td>2020</td>
-	<td>2020 IEEE International Symposium on Software Reliability Engineering Workshops (ISSREW), pp. 37-42&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ISSREW51248.2020.00034">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Wu2024" class="entry">
-	<td>Wu, L., Zhao, Y., Hou, X., Liu, T. and Wang, H.</td>
-	<td>ChatGPT Chats Decoded: Uncovering Prompt Patterns for Superior Solutions in Software Development Lifecycle</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 142-146&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3645069">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Champa2024" class="entry">
-	<td>Champa, A.I., Rabbi, M.F., Nachuma, C. and Zibran, M.F.</td>
-	<td>ChatGPT in Action: Analyzing Its Use in Software Development</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 182-186&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3645077">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Nikeghbal2024" class="entry">
-	<td>Nikeghbal, N., Kargaran, A.H. and Heydarnoori, A.</td>
-	<td>GIRT-Model: Automated Generation of Issue Report Templates</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 407-418&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644906">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Zhang2022" class="entry">
-	<td>Zhang, T., Irsan, I.C., Thung, F., Han, D., Lo, D. and Jiang, L.</td>
-	<td>Automatic Pull Request Title Generation</td>
-	<td>2022</td>
-	<td>2022 IEEE International Conference on Software Maintenance and Evolution (ICSME), pp. 71-81&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ICSME55016.2022.00015">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Siddiq2022" class="entry">
-	<td>Siddiq, M.L. and Santos, J.C.S.</td>
-	<td>BERT-Based GitHub Issue Report Classification</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 33-36&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3528588.3528660">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Izadi2022a" class="entry">
-	<td>Izadi, M.</td>
-	<td>CatIss: An Intelligent Tool for Categorizing Issues Reports using Transformers</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 44-47&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3528588.3528662">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Colavito2023" class="entry">
-	<td>Colavito, G., Lanubile, F. and Novielli, N.</td>
-	<td>Few-Shot Learning for Issue Report Classification</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 2nd International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 16-19&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/NLBSE59153.2023.00011">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Schick2021" class="entry">
-	<td>Schick, T. and Sch&uuml;tze, H.</td>
-	<td>Generating Datasets with Pretrained Language Models</td>
-	<td>2021</td>
-	<td>Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 6943-6951&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.18653/v1/2021.emnlp-main.555">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Bharadwaj2022" class="entry">
-	<td>Bharadwaj, S. and Kadam, T.</td>
-	<td>GitHub Issue Classification Using BERT-Style Models</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 40-43&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3528588.3528663">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Wang2022a" class="entry">
-	<td>Wang, J., Zhang, X., Chen, L. and Xie, X.</td>
-	<td>Personalizing label prediction for GitHub issues</td>
-	<td>2022</td>
-	<td>Information and Software Technology<br/>Vol. 145, pp. 106845&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1016/j.infsof.2022.106845">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Zhang2022a" class="entry">
-	<td>Zhang, T., Irsan, I.C., Thung, F., Han, D., Lo, D. and Jiang, L.</td>
-	<td>iTiger: an automatic issue title generation tool</td>
-	<td>2022</td>
-	<td>Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering, pp. 1637–1641&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3540250.3558934">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Lin2024" class="entry">
-	<td>Lin, H.Y., Thongtanunam, P., Treude, C. and Charoenwet, W.</td>
-	<td>Improving Automated Code Reviews: Learning from Experience</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 278-283&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644910">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Ehsani2024" class="entry">
-	<td>Ehsani, R., Imran, M.M., Zita, R., Damevski, K. and Chatterjee, P.</td>
-	<td>Incivility in Open Source Projects: A Comprehensive Annotated Dataset of Locked GitHub Issue Threads</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 515-519&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644887">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Colavito2024" class="entry">
-	<td>Colavito, G., Lanubile, F., Novielli, N. and Quaranta, L.</td>
-	<td>Leveraging GPT-like LLMs to Automate Issue Labeling</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 469-480&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644903">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Colavito2022" class="entry">
-	<td>Colavito, G., Lanubile, F. and Novielli, N.</td>
-	<td>Issue Report Classification Using Pre-trained Language Models</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 29-32&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3528588.3528659">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Alhindi2023" class="entry">
-	<td>Alhindi, W., Aleid, A., Jenhani, I. and Mkaouer, M.W.</td>
-	<td>Issue-Labeler: an ALBERT-based Jira Plugin for Issue Classification</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 10th International Conference on Mobile Software Engineering and Systems (MOBILESoft), pp. 40-43&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/MOBILSoft59058.2023.00012">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Zhang2025" class="entry">
-	<td>Zhang, T., Irsan, I.C., Thung, F. and Lo, D.</td>
-	<td>Revisiting Sentiment Analysis for Software Engineering in the Era of Large Language Models</td>
-	<td>2025</td>
-	<td>ACM Trans. Softw. Eng. Methodol.<br/>Vol. 34(3)&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1145/3697009">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Alsayed2024" class="entry">
-	<td>Alsayed, A.S., Khanh Dam, H. and Nguyen, C.</td>
-	<td>MicroRec: Leveraging Large Language Models for Microservice Recommendation</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 419-430&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644916">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Sarker2023" class="entry">
-	<td>Sarker, J., Turzo, A.K., Dong, M. and Bosu, A.</td>
-	<td>Automated Identification of Toxic Code Reviews Using ToxiCR</td>
-	<td>2023</td>
-	<td><br/>Vol. 32(5)&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1145/3583562">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Cheriyan2021" class="entry">
-	<td>Cheriyan, J., Savarimuthu, B.T.R. and Cranefield, S.</td>
-	<td>Towards offensive language detection and reduction in four Software Engineering communities</td>
-	<td>2021</td>
-	<td>Proceedings of the 25th International Conference on Evaluation and Assessment in Software Engineering, pp. 254–259&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3463274.3463805">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Sagdic2024" class="entry">
-	<td>Sagdic, E., Bayram, A. and Islam, M.R.</td>
-	<td>On the Taxonomy of Developers’ Discussion Topics with ChatGPT</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 197-201&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3645080">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Jiang2024" class="entry">
-	<td>Jiang, W., Yasmin, J., Jones, J., Synovic, N., Kuo, J., Bielanski, N., Tian, Y., Thiruvathukal, G.K. and Davis, J.C.</td>
-	<td>PeaTMOSS: A Dataset and Initial Analysis of Pre-Trained Models in Open-Source Software</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 431-443&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644907">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Jiang2025" class="entry">
-	<td>Jiang, W., Kim, M., Cheung, C., Kim, H., Thiruvathukal, G.K. and Davis, J.C.</td>
-	<td>“I see models being a whole other thing”: an empirical study of pre-trained model naming conventions and a tool for enhancing naming consistency</td>
-	<td>2025</td>
-	<td>Empirical Software Engineering<br/>Vol. 30(6), pp. 155&nbsp;</td>
-	<td>article</td>
-	<td>&nbsp;</td>
-</tr>
-<tr id="Sutoyo2024" class="entry">
-	<td>Sutoyo, E. and Capiluppi, A.</td>
-	<td>SATDAUG - A Balanced and Augmented Dataset for Detecting Self-Admitted Technical Debt</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 289-293&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644880">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Dai2025" class="entry">
-	<td>Dai, H., Liu, Z., Liao, W., Huang, X., Cao, Y., Wu, Z., Zhao, L., Xu, S., Zeng, F., Liu, W., Liu, N., Li, S., Zhu, D., Cai, H., Sun, L., Li, Q., Shen, D., Liu, T. and Li, X.</td>
-	<td>AugGPT: Leveraging ChatGPT for Text Data Augmentation</td>
-	<td>2025</td>
-	<td>IEEE Transactions on Big Data<br/>Vol. 11(3), pp. 907-918&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1109/TBDATA.2025.3536934">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Sutoyo2024a" class="entry">
-	<td>Sutoyo, E., Avgeriou, P. and Capiluppi, A.</td>
-	<td>Deep Learning and Data Augmentation for Detecting Self-Admitted Technical Debt</td>
-	<td>2024</td>
-	<td>2024 31st Asia-Pacific Software Engineering Conference (APSEC), pp. 01-10&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/APSEC65559.2024.00022">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Yang2020" class="entry">
-	<td>Yang, Y., Malaviya, C., Fernandez, J., Swayamdipta, S., Le Bras, R., Wang, J.-P., Bhagavatula, C., Choi, Y. and Downey, D.</td>
-	<td>Generative Data Augmentation for Commonsense Reasoning</td>
-	<td>2020</td>
-	<td>Findings of the Association for Computational Linguistics: EMNLP 2020, pp. 1008-1025&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.18653/v1/2020.findings-emnlp.90">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Preda2024" class="entry">
-	<td>Preda, A.-R., Mayr-Dorn, C., Mashkoor, A. and Egyed, A.</td>
-	<td>Supporting High-Level to Low-Level Requirements Coverage Reviewing with Large Language Models</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 242-253&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644922">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Ezzini2023" class="entry">
-	<td>Ezzini, S., Abualhaija, S., Arora, C. and Sabetzadeh, M.</td>
-	<td>AI-based Question Answering Assistance for Analyzing Natural-language Requirements</td>
-	<td>2023</td>
-	<td>2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE), pp. 1277-1289&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ICSE48619.2023.00113">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Liu2024" class="entry">
-	<td>Liu, K., Han, Y., Liu, Y., Zhang, J.M., Chen, Z., Sarro, F., Huang, G. and Ma, Y.</td>
-	<td>TrickyBugs: A Dataset of Corner-case Bugs in Plausible Programs</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 113-117&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644870">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Idialu2024" class="entry">
-	<td>Idialu, O.J., Mathews, N.S., Maipradit, R., Atlee, J.M. and Nagappan, M.</td>
-	<td>Whodunit: Classifying Code as Human Authored or GPT-4 generated- A case study on CodeChef problems</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 394-406&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643991.3644926">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Nguyen2025" class="entry">
+<tbody><tr id="2025-8" class="entry">
 	<td>Nguyen, T., Gill, W. and Gulzar, M.A.</td>
-	<td>Are the Majority of Public Computational Notebooks Pathologically Non-Executable?</td>
+	<td>Are the Majority of Public Computational Notebooks Pathologically Non-Executable? <p class="infolinks">[<a href="javascript:toggleInfo('2025-8','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 396-407&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00070">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Jaoua2025" class="entry">
+<tr id="bib_2025-8" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-8,
+  author = {Nguyen, Tien and Gill, Waris and Gulzar, Muhammad Ali},
+  title = {Are the Majority of Public Computational Notebooks Pathologically Non-Executable?},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {396-407},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00070}
+}
+</pre></td>
+</tr>
+<tr id="2024-82-1" class="entry">
+	<td>Dai, H., Liu, Z., Liao, W., Huang, X., Cao, Y., Wu, Z., Zhao, L., Xu, S., Zeng, F., Liu, W., Liu, N., Li, S., Zhu, D., Cai, H., Sun, L., Li, Q., Shen, D., Liu, T. and Li, X.</td>
+	<td>AugGPT: Leveraging ChatGPT for Text Data Augmentation <p class="infolinks">[<a href="javascript:toggleInfo('2024-82-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2025</td>
+	<td>IEEE Transactions on Big Data<br/>Vol. 11(3), pp. 907-918&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1109/TBDATA.2025.3536934">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-82-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2024-82-1,
+  author = {Dai, Haixing and Liu, Zhengliang and Liao, Wenxiong and Huang, Xiaoke and Cao, Yihan and Wu, Zihao and Zhao, Lin and Xu, Shaochen and Zeng, Fang and Liu, Wei and Liu, Ninghao and Li, Sheng and Zhu, Dajiang and Cai, Hongmin and Sun, Lichao and Li, Quanzheng and Shen, Dinggang and Liu, Tianming and Li, Xiang},
+  title = {AugGPT: Leveraging ChatGPT for Text Data Augmentation},
+  journal = {IEEE Transactions on Big Data},
+  year = {2025},
+  volume = {11},
+  number = {3},
+  pages = {907-918},
+  doi = {https://doi.org/10.1109/TBDATA.2025.3536934}
+}
+</pre></td>
+</tr>
+<tr id="2025-21" class="entry">
 	<td>Jaoua, I., Sghaier, O.B. and Sahraoui, H.</td>
-	<td>Combining Large Language Models with Static Analyzers for Code Review Generation</td>
+	<td>Combining Large Language Models with Static Analyzers for Code Review Generation <p class="infolinks">[<a href="javascript:toggleInfo('2025-21','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 174-186&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00038">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Wadhwa2024" class="entry">
-	<td>Wadhwa, N., Pradhan, J., Sonwane, A., Sahu, S.P., Natarajan, N., Kanade, A., Parthasarathy, S. and Rajamani, S.</td>
-	<td>CORE: Resolving Code Quality Issues using LLMs</td>
-	<td>2024</td>
-	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1145/3643762">DOI</a> &nbsp;</td>
+<tr id="bib_2025-21" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-21,
+  author = {Jaoua, Imen and Sghaier, Oussama Ben and Sahraoui, Houari},
+  title = {Combining Large Language Models with Static Analyzers for Code Review Generation},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {174-186},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00038}
+}
+</pre></td>
 </tr>
-<tr id="Lu2023" class="entry">
-	<td>Lu, J., Yu, L., Li, X., Yang, L. and Zuo, C.</td>
-	<td>LLaMA-Reviewer: Advancing Code Review Automation with Large Language Models through Parameter-Efficient Fine-Tuning</td>
-	<td>2023</td>
-	<td>2023 IEEE 34th International Symposium on Software Reliability Engineering (ISSRE), pp. 647-658&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ISSRE59848.2023.00026">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Tufano2022" class="entry">
-	<td>Tufano, R., Masiero, S., Mastropaolo, A., Pascarella, L., Poshyvanyk, D. and Bavota, G.</td>
-	<td>Using Pre-Trained Models to Boost Code Review Automation</td>
-	<td>2022</td>
-	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 2291-2302&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3510003.3510621">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Galimzyanov2025" class="entry">
+<tr id="2025-30" class="entry">
 	<td>Galimzyanov, T., Titov, S., Golubev, Y. and Bogomolov, E.</td>
-	<td>Drawing Pandas: A Benchmark for LLMs in Generating Plotting Code</td>
+	<td>Drawing Pandas: A Benchmark for LLMs in Generating Plotting Code <p class="infolinks">[<a href="javascript:toggleInfo('2025-30','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 503-507&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00083">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Wu2025" class="entry">
-	<td>Wu, C., Liang, Z., Ge, Y., Guo, Q., Lu, Z., Wang, J., Shan, Y. and Luo, P.</td>
-	<td>Plot2Code: A Comprehensive Benchmark for Evaluating Multi-modal Large Language Models in Code Generation from Scientific Plots</td>
-	<td>2025</td>
-	<td>Findings of the Association for Computational Linguistics: NAACL 2025, pp. 3006-3028&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.18653/v1/2025.findings-naacl.164">DOI</a> &nbsp;</td>
+<tr id="bib_2025-30" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-30,
+  author = {Galimzyanov, Timur and Titov, Sergey and Golubev, Yaroslav and Bogomolov, Egor},
+  title = {Drawing Pandas: A Benchmark for LLMs in Generating Plotting Code},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {503-507},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00083}
+}
+</pre></td>
 </tr>
-<tr id="Chakraborty2025" class="entry">
+<tr id="2025-36" class="entry">
 	<td>Chakraborty, M., Pirkelbauer, P. and Yi, Q.</td>
-	<td>FormalSpecCpp: A Dataset of C++ Formal Specifications created using LLMs</td>
+	<td>FormalSpecCpp: A Dataset of C++ Formal Specifications created using LLMs <p class="infolinks">[<a href="javascript:toggleInfo('2025-36','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 758-762&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00113">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Aranovich2022" class="entry">
-	<td>Aranovich, R., Wu, M., Yu, D., Katsy, K., Ahmadnia, B., Bishop, M., Filkov, V. and Sagae, K.</td>
-	<td>Beyond NVD: Cybersecurity meets the Semantic Web.</td>
-	<td>2022</td>
-	<td>Proceedings of the 2021 New Security Paradigms Workshop, pp. 59–69&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3498891.3501259">DOI</a> &nbsp;</td>
+<tr id="bib_2025-36" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-36,
+  author = {Chakraborty, Madhurima and Pirkelbauer, Peter and Yi, Qing},
+  title = {FormalSpecCpp: A Dataset of C++ Formal Specifications created using LLMs},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {758-762},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00113}
+}
+</pre></td>
 </tr>
-<tr id="Sghaier2025" class="entry">
+<tr id="2025-42" class="entry">
 	<td>Sghaier, O.B., Weyssow, M. and Sahraoui, H.</td>
-	<td>Harnessing Large Language Models for Curated Code Reviews</td>
+	<td>Harnessing Large Language Models for Curated Code Reviews <p class="infolinks">[<a href="javascript:toggleInfo('2025-42','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 187-198&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00039">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Ahmed2025" class="entry">
+<tr id="bib_2025-42" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-42,
+  author = {Sghaier, Oussama Ben and Weyssow, Martin and Sahraoui, Houari},
+  title = {Harnessing Large Language Models for Curated Code Reviews},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {187-198},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00039}
+}
+</pre></td>
+</tr>
+<tr id="2025-49" class="entry">
 	<td>Ahmed, F., Tan, X., Adewole, F., Datta, S. and Nayebi, M.</td>
-	<td>Inferring Questions from Programming Screenshots</td>
+	<td>Inferring Questions from Programming Screenshots <p class="infolinks">[<a href="javascript:toggleInfo('2025-49','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 750-755&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00111">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Bhat2023" class="entry">
-	<td>Bhat, M.M., Meng, R., Liu, Y., Zhou, Y. and Yavuz, S.</td>
-	<td>Investigating Answerability of LLMs for Long-Form Question Answering</td>
-	<td>2023</td>
-	<td>arXiv preprint arXiv:2309.08210&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.48550/arXiv.2309.08210">DOI</a> &nbsp;</td>
+<tr id="bib_2025-49" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-49,
+  author = {Ahmed, Faiz and Tan, Xuchen and Adewole, Folajinmi and Datta, Suprakash and Nayebi, Maleknaz},
+  title = {Inferring Questions from Programming Screenshots},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {750-755},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00111}
+}
+</pre></td>
 </tr>
-<tr id="Tayeb2025" class="entry">
+<tr id="2025-52" class="entry">
 	<td>Tayeb, A.J. and Haiduc, S.</td>
-	<td>Intelligent Semantic Matching (ISM) for Video Tutorial Search using Transformer Models</td>
+	<td>Intelligent Semantic Matching (ISM) for Video Tutorial Search using Transformer Models <p class="infolinks">[<a href="javascript:toggleInfo('2025-52','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 712-724&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00108">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Yang2022" class="entry">
-	<td>Yang, C., Thung, F. and Lo, D.</td>
-	<td>Efficient Search of Live-Coding Screencasts from Online Videos</td>
-	<td>2022</td>
-	<td>2022 IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER), pp. 73-77&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/SANER53432.2022.00021">DOI</a> &nbsp;</td>
+<tr id="bib_2025-52" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-52,
+  author = {Tayeb, Ahmad J. and Haiduc, Sonia},
+  title = {Intelligent Semantic Matching (ISM) for Video Tutorial Search using Transformer Models},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {712-724},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00108}
+}
+</pre></td>
 </tr>
-<tr id="Malkadi2023" class="entry">
-	<td>Malkadi, A., Tayeb, A. and Haiduc, S.</td>
-	<td>Improving Code Extraction from Coding Screencasts Using a Code-Aware Encoder-Decoder Model</td>
-	<td>2023</td>
-	<td>2023 38th IEEE/ACM International Conference on Automated Software Engineering (ASE), pp. 1492-1504&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ASE56229.2023.00184">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Rahman2025" class="entry">
+<tr id="2025-53" class="entry">
 	<td>Rahman, M.S., Codabux, Z. and Roy, C.K.</td>
-	<td>Investigating the Understandability of Review Comments on Code Change Requests</td>
+	<td>Investigating the Understandability of Review Comments on Code Change Requests <p class="infolinks">[<a href="javascript:toggleInfo('2025-53','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 539-551&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00087">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Rahman2024" class="entry">
-	<td>Rahman, M.S., Codabux, Z. and Roy, C.K.</td>
-	<td>Do Words Have Power? Understanding and Fostering Civility in Code Review Discussion</td>
-	<td>2024</td>
-	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1145/3660780">DOI</a> &nbsp;</td>
+<tr id="bib_2025-53" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-53,
+  author = {Rahman, Md Shamimur and Codabux, Zadia and Roy, Chanchal K.},
+  title = {Investigating the Understandability of Review Comments on Code Change Requests},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {539-551},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00087}
+}
+</pre></td>
 </tr>
-<tr id="Yang2023" class="entry">
-	<td>Yang, L., Xu, J., Zhang, Y., Zhang, H. and Bacchelli, A.</td>
-	<td>EvaCRC: Evaluating Code Review Comments</td>
-	<td>2023</td>
-	<td>Proceedings of the 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering, pp. 275–287&nbsp;</td>
+<tr id="2025-30-1" class="entry">
+	<td>Wu, C., Liang, Z., Ge, Y., Guo, Q., Lu, Z., Wang, J., Shan, Y. and Luo, P.</td>
+	<td>Plot2Code: A Comprehensive Benchmark for Evaluating Multi-modal Large Language Models in Code Generation from Scientific Plots <p class="infolinks">[<a href="javascript:toggleInfo('2025-30-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2025</td>
+	<td>Findings of the Association for Computational Linguistics: NAACL 2025, pp. 3006-3028&nbsp;</td>
 	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3611643.3616245">DOI</a> &nbsp;</td>
+	<td><a href="https://doi.org/10.18653/v1/2025.findings-naacl.164">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Rahman2022" class="entry">
-	<td>Rahman, S., Koana, U.A. and Nayebi, M.</td>
-	<td>Example Driven Code Review Explanation</td>
-	<td>2022</td>
-	<td>Proceedings of the 16th ACM / IEEE International Symposium on Empirical Software Engineering and Measurement, pp. 307–312&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3544902.3546639">DOI</a> &nbsp;</td>
+<tr id="bib_2025-30-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-30-1,
+  author = {Wu, Chengyue and Liang, Zhixuan and Ge, Yixiao and Guo, Qiushan and Lu, Zeyu and Wang, Jiahao and Shan, Ying and Luo, Ping},
+  title = {Plot2Code: A Comprehensive Benchmark for Evaluating Multi-modal Large Language Models in Code Generation from Scientific Plots},
+  booktitle = {Findings of the Association for Computational Linguistics: NAACL 2025},
+  year = {2025},
+  pages = {3006-3028},
+  doi = {https://doi.org/10.18653/v1/2025.findings-naacl.164}
+}
+</pre></td>
 </tr>
-<tr id="Tafreshipour2025" class="entry">
+<tr id="2025-79" class="entry">
 	<td>Tafreshipour, M., Imani, A., Huang, E., Almeida, E.S.d., Zimmermann, T. and Ahmed, I.</td>
-	<td>Prompting in the Wild: An Empirical Study of Prompt Evolution in Software Repositories</td>
+	<td>Prompting in the Wild: An Empirical Study of Prompt Evolution in Software Repositories <p class="infolinks">[<a href="javascript:toggleInfo('2025-79','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 686-698&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00106">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Li2024" class="entry">
-	<td>Li, J., Raheja, V. and Kumar, D.</td>
-	<td>ContraDoc: Understanding Self-Contradictions in Documents with Large Language Models</td>
-	<td>2024</td>
-	<td>Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers), pp. 6509-6523&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.18653/v1/2024.naacl-long.362">DOI</a> &nbsp;</td>
+<tr id="bib_2025-79" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-79,
+  author = {Tafreshipour, Mahan and Imani, Aaron and Huang, Eric and Almeida, Eduardo Santana de and Zimmermann, Thomas and Ahmed, Iftekhar},
+  title = {Prompting in the Wild: An Empirical Study of Prompt Evolution in Software Repositories},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {686-698},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00106}
+}
+</pre></td>
 </tr>
-<tr id="2024" class="entry">
-	<td>Li, J., Farag&oacute;, D., Petrov, C. and Ahmed, I.</td>
-	<td>Only diff Is Not Enough: Generating Commit Messages Leveraging Reasoning and Action of Large Language Model</td>
-	<td>2024</td>
-	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
-	<td>article</td>
-	<td><a href="https://doi.org/10.1145/3643760">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Pister2024" class="entry">
-	<td>Pister, K., Paul, D.J., Brophy, P. and Joshi, I.</td>
-	<td>PromptSet: A Programmer’s Prompting Dataset</td>
-	<td>2024</td>
-	<td>2024 IEEE/ACM International Workshop on Large Language Models for Code (LLM4Code), pp. 62-69&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3643795.3648395">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Henkel2021" class="entry">
-	<td>Henkel, J., Silva, D., Teixeira, L., d’Amorim , M. and Reps, T.</td>
-	<td>Shipwright: A Human-in-the-Loop System for Dockerfile Repair</td>
-	<td>2021</td>
-	<td>2021 IEEE/ACM 43rd International Conference on Software Engineering: Companion Proceedings (ICSE-Companion), pp. 198-199&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1109/ICSE-Companion52605.2021.00087">DOI</a> &nbsp;</td>
-</tr>
-<tr id="Abedu2025" class="entry">
+<tr id="2025-83" class="entry">
 	<td>Abedu, S., Menneron, L., Khatoonabadi, S. and Shihab, E.</td>
-	<td>RepoChat: An LLM-Powered Chatbot for GitHub Repository Question-Answering</td>
+	<td>RepoChat: An LLM-Powered Chatbot for GitHub Repository Question-Answering <p class="infolinks">[<a href="javascript:toggleInfo('2025-83','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 255-259&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00045">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Abedu2024" class="entry">
-	<td>Abedu, S., Abdellatif, A. and Shihab, E.</td>
-	<td>LLM-Based Chatbots for Mining Software Repositories: Challenges and Opportunities</td>
-	<td>2024</td>
-	<td>Proceedings of the 28th International Conference on Evaluation and Assessment in Software Engineering, pp. 201–210&nbsp;</td>
-	<td>inproceedings</td>
-	<td><a href="https://doi.org/10.1145/3661167.3661218">DOI</a> &nbsp;</td>
+<tr id="bib_2025-83" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-83,
+  author = {Abedu, Samuel and Menneron, Laurine and Khatoonabadi, SayedHassan and Shihab, Emad},
+  title = {RepoChat: An LLM-Powered Chatbot for GitHub Repository Question-Answering},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {255-259},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00045}
+}
+</pre></td>
 </tr>
-<tr id="Abedu2024a" class="entry">
-	<td>Abedu, S., Khatoonabadi, S. and Shihab, E.</td>
-	<td>Synergizing LLMs and Knowledge Graphs: A Novel Approach to Software Repository-Related Question Answering</td>
-	<td>2024</td>
-	<td>arXiv preprint arXiv:2412.03815&nbsp;</td>
+<tr id="2024-62-3" class="entry">
+	<td>Zhang, T., Irsan, I.C., Thung, F. and Lo, D.</td>
+	<td>Revisiting Sentiment Analysis for Software Engineering in the Era of Large Language Models <p class="infolinks">[<a href="javascript:toggleInfo('2024-62-3','bibtex')">BibTeX</a>]</p></td>
+	<td>2025</td>
+	<td>ACM Trans. Softw. Eng. Methodol.<br/>Vol. 34(3)&nbsp;</td>
 	<td>article</td>
-	<td><a href="https://doi.org/10.48550/arXiv.2412.03815">DOI</a> &nbsp;</td>
+	<td><a href="https://doi.org/10.1145/3697009">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Alves2025" class="entry">
+<tr id="bib_2024-62-3" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2024-62-3,
+  author = {Zhang, Ting and Irsan, Ivana Clairine and Thung, Ferdian and Lo, David},
+  title = {Revisiting Sentiment Analysis for Software Engineering in the Era of Large Language Models},
+  journal = {ACM Trans. Softw. Eng. Methodol.},
+  year = {2025},
+  volume = {34},
+  number = {3},
+  doi = {https://doi.org/10.1145/3697009}
+}
+</pre></td>
+</tr>
+<tr id="2025-94" class="entry">
 	<td>Alves, A. and Hora, A.</td>
-	<td>TestMigrationsInPy: A Dataset of Test Migrations from Unittest to Pytest</td>
+	<td>TestMigrationsInPy: A Dataset of Test Migrations from Unittest to Pytest <p class="infolinks">[<a href="javascript:toggleInfo('2025-94','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 841-845&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00122">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Liu2025" class="entry">
+<tr id="bib_2025-94" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-94,
+  author = {Alves, Altino and Hora, Andre},
+  title = {TestMigrationsInPy: A Dataset of Test Migrations from Unittest to Pytest},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {841-845},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00122}
+}
+</pre></td>
+</tr>
+<tr id="2025-97" class="entry">
 	<td>Liu, C., Lin, H.Y. and Thongtanunam, P.</td>
-	<td>Too Noisy To Learn: Enhancing Data Quality for Code Review Comment Generation</td>
+	<td>Too Noisy To Learn: Enhancing Data Quality for Code Review Comment Generation <p class="infolinks">[<a href="javascript:toggleInfo('2025-97','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 236-248&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00043">DOI</a> &nbsp;</td>
 </tr>
-<tr id="Ehsani2025" class="entry">
+<tr id="bib_2025-97" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-97,
+  author = {Liu, Chunhua and Lin, Hong Yi and Thongtanunam, Patanamon},
+  title = {Too Noisy To Learn: Enhancing Data Quality for Code Review Comment Generation},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {236-248},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00043}
+}
+</pre></td>
+</tr>
+<tr id="2025-98" class="entry">
 	<td>Ehsani, R., Pathak, S. and Chatterjee, P.</td>
-	<td>Towards Detecting Prompt Knowledge Gaps for Improved LLM-guided Issue Resolution</td>
+	<td>Towards Detecting Prompt Knowledge Gaps for Improved LLM-guided Issue Resolution <p class="infolinks">[<a href="javascript:toggleInfo('2025-98','bibtex')">BibTeX</a>]</p></td>
 	<td>2025</td>
 	<td>2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR), pp. 699-711&nbsp;</td>
 	<td>inproceedings</td>
 	<td><a href="https://doi.org/10.1109/MSR66628.2025.00107">DOI</a> &nbsp;</td>
 </tr>
+<tr id="bib_2025-98" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-98,
+  author = {Ehsani, Ramtin and Pathak, Sakshi and Chatterjee, Preetha},
+  title = {Towards Detecting Prompt Knowledge Gaps for Improved LLM-guided Issue Resolution},
+  booktitle = {2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR)},
+  year = {2025},
+  pages = {699-711},
+  doi = {https://doi.org/10.1109/MSR66628.2025.00107}
+}
+</pre></td>
+</tr>
+<tr id="2024-76-1" class="entry">
+	<td>Jiang, W., Kim, M., Cheung, C., Kim, H., Thiruvathukal, G.K. and Davis, J.C.</td>
+	<td>“I see models being a whole other thing”: an empirical study of pre-trained model naming conventions and a tool for enhancing naming consistency <p class="infolinks">[<a href="javascript:toggleInfo('2024-76-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2025</td>
+	<td>Empirical Software Engineering<br/>Vol. 30(6), pp. 155&nbsp;</td>
+	<td>article</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_2024-76-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2024-76-1,
+  author = {Jiang, Wenxin and Kim, Mingyu and Cheung, Chingwo and Kim, Heesoo and Thiruvathukal, George K and Davis, James C},
+  title = {“I see models being a whole other thing”: an empirical study of pre-trained model naming conventions and a tool for enhancing naming consistency},
+  journal = {Empirical Software Engineering},
+  year = {2025},
+  volume = {30},
+  number = {6},
+  pages = {155}
+}
+</pre></td>
+</tr>
+<tr id="2024-7" class="entry">
+	<td>Rabbi, M.F., Champa, A., Zibran, M. and Islam, M.R.</td>
+	<td>AI Writes, We Analyze: The ChatGPT Python Code Saga <p class="infolinks">[<a href="javascript:toggleInfo('2024-7','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 177-181&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3645076">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-7" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-7,
+  author = {Rabbi, Md Fazle and Champa, Arifa and Zibran, Minhaz and Islam, Md Rakibul},
+  title = {AI Writes, We Analyze: The ChatGPT Python Code Saga},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {177-181},
+  doi = {https://doi.org/10.1145/3643991.3645076}
+}
+</pre></td>
+</tr>
+<tr id="2024-14" class="entry">
+	<td>Castaño, J., Martínez-Fernández, S., Franch, X. and Bogner, J.</td>
+	<td>Analyzing the Evolution and Maintenance of ML Models on Hugging Face <p class="infolinks">[<a href="javascript:toggleInfo('2024-14','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 607-618&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644898">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-14" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-14,
+  author = {Castaño, Joel and Martínez-Fernández, Silverio and Franch, Xavier and Bogner, Justus},
+  title = {Analyzing the Evolution and Maintenance of ML Models on Hugging Face},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {607-618},
+  doi = {https://doi.org/10.1145/3643991.3644898}
+}
+</pre></td>
+</tr>
+<tr id="2024-24" class="entry">
+	<td>Wu, L., Zhao, Y., Hou, X., Liu, T. and Wang, H.</td>
+	<td>ChatGPT Chats Decoded: Uncovering Prompt Patterns for Superior Solutions in Software Development Lifecycle <p class="infolinks">[<a href="javascript:toggleInfo('2024-24','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 142-146&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3645069">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-24" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-24,
+  author = {Wu, Liangxuan and Zhao, Yanjie and Hou, Xinyi and Liu, Tianming and Wang, Haoyu},
+  title = {ChatGPT Chats Decoded: Uncovering Prompt Patterns for Superior Solutions in Software Development Lifecycle},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {142-146},
+  doi = {https://doi.org/10.1145/3643991.3645069}
+}
+</pre></td>
+</tr>
+<tr id="2024-25" class="entry">
+	<td>Champa, A.I., Rabbi, M.F., Nachuma, C. and Zibran, M.F.</td>
+	<td>ChatGPT in Action: Analyzing Its Use in Software Development <p class="infolinks">[<a href="javascript:toggleInfo('2024-25','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 182-186&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3645077">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-25" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-25,
+  author = {Champa, Arifa I. and Rabbi, Md Fazle and Nachuma, Costain and Zibran, Minhaz F.},
+  title = {ChatGPT in Action: Analyzing Its Use in Software Development},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {182-186},
+  doi = {https://doi.org/10.1145/3643991.3645077}
+}
+</pre></td>
+</tr>
+<tr id="2025-79-1" class="entry">
+	<td>Li, J., Raheja, V. and Kumar, D.</td>
+	<td>ContraDoc: Understanding Self-Contradictions in Documents with Large Language Models <p class="infolinks">[<a href="javascript:toggleInfo('2025-79-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers), pp. 6509-6523&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2024.naacl-long.362">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-79-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-79-1,
+  author = {Li, Jierui and Raheja, Vipul and Kumar, Dhruv},
+  title = {ContraDoc: Understanding Self-Contradictions in Documents with Large Language Models},
+  booktitle = {Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers)},
+  year = {2024},
+  pages = {6509-6523},
+  doi = {https://doi.org/10.18653/v1/2024.naacl-long.362}
+}
+</pre></td>
+</tr>
+<tr id="2025-21-3" class="entry">
+	<td>Wadhwa, N., Pradhan, J., Sonwane, A., Sahu, S.P., Natarajan, N., Kanade, A., Parthasarathy, S. and Rajamani, S.</td>
+	<td>CORE: Resolving Code Quality Issues using LLMs <p class="infolinks">[<a href="javascript:toggleInfo('2025-21-3','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3643762">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-21-3" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2025-21-3,
+  author = {Wadhwa, Nalin and Pradhan, Jui and Sonwane, Atharv and Sahu, Surya Prakash and Natarajan, Nagarajan and Kanade, Aditya and Parthasarathy, Suresh and Rajamani, Sriram},
+  title = {CORE: Resolving Code Quality Issues using LLMs},
+  journal = {Proc. ACM Softw. Eng.},
+  year = {2024},
+  volume = {1},
+  number = {FSE},
+  doi = {https://doi.org/10.1145/3643762}
+}
+</pre></td>
+</tr>
+<tr id="2024-82-2" class="entry">
+	<td>Sutoyo, E., Avgeriou, P. and Capiluppi, A.</td>
+	<td>Deep Learning and Data Augmentation for Detecting Self-Admitted Technical Debt <p class="infolinks">[<a href="javascript:toggleInfo('2024-82-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 31st Asia-Pacific Software Engineering Conference (APSEC), pp. 01-10&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/APSEC65559.2024.00022">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-82-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-82-2,
+  author = {Sutoyo, Edi and Avgeriou, Paris and Capiluppi, Andrea},
+  title = {Deep Learning and Data Augmentation for Detecting Self-Admitted Technical Debt},
+  booktitle = {2024 31st Asia-Pacific Software Engineering Conference (APSEC)},
+  year = {2024},
+  pages = {01-10},
+  doi = {https://doi.org/10.1109/APSEC65559.2024.00022}
+}
+</pre></td>
+</tr>
+<tr id="2025-53-1" class="entry">
+	<td>Rahman, M.S., Codabux, Z. and Roy, C.K.</td>
+	<td>Do Words Have Power? Understanding and Fostering Civility in Code Review Discussion <p class="infolinks">[<a href="javascript:toggleInfo('2025-53-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3660780">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-53-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2025-53-1,
+  author = {Rahman, Md Shamimur and Codabux, Zadia and Roy, Chanchal K.},
+  title = {Do Words Have Power? Understanding and Fostering Civility in Code Review Discussion},
+  journal = {Proc. ACM Softw. Eng.},
+  year = {2024},
+  volume = {1},
+  number = {FSE},
+  doi = {https://doi.org/10.1145/3660780}
+}
+</pre></td>
+</tr>
+<tr id="2024-45" class="entry">
+	<td>Nikeghbal, N., Kargaran, A.H. and Heydarnoori, A.</td>
+	<td>GIRT-Model: Automated Generation of Issue Report Templates <p class="infolinks">[<a href="javascript:toggleInfo('2024-45','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 407-418&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644906">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-45,
+  author = {Nikeghbal, Nafiseh and Kargaran, Amir Hossein and Heydarnoori, Abbas},
+  title = {GIRT-Model: Automated Generation of Issue Report Templates},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {407-418},
+  doi = {https://doi.org/10.1145/3643991.3644906}
+}
+</pre></td>
+</tr>
+<tr id="2024-56" class="entry">
+	<td>Lin, H.Y., Thongtanunam, P., Treude, C. and Charoenwet, W.</td>
+	<td>Improving Automated Code Reviews: Learning from Experience <p class="infolinks">[<a href="javascript:toggleInfo('2024-56','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 278-283&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644910">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-56" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-56,
+  author = {Lin, Hong Yi and Thongtanunam, Patanamon and Treude, Christoph and Charoenwet, Wachiraphan},
+  title = {Improving Automated Code Reviews: Learning from Experience},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {278-283},
+  doi = {https://doi.org/10.1145/3643991.3644910}
+}
+</pre></td>
+</tr>
+<tr id="2024-57" class="entry">
+	<td>Ehsani, R., Imran, M.M., Zita, R., Damevski, K. and Chatterjee, P.</td>
+	<td>Incivility in Open Source Projects: A Comprehensive Annotated Dataset of Locked GitHub Issue Threads <p class="infolinks">[<a href="javascript:toggleInfo('2024-57','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 515-519&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644887">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-57" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-57,
+  author = {Ehsani, Ramtin and Imran, Mia Mohammad and Zita, Robert and Damevski, Kostadin and Chatterjee, Preetha},
+  title = {Incivility in Open Source Projects: A Comprehensive Annotated Dataset of Locked GitHub Issue Threads},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {515-519},
+  doi = {https://doi.org/10.1145/3643991.3644887}
+}
+</pre></td>
+</tr>
+<tr id="2024-62" class="entry">
+	<td>Colavito, G., Lanubile, F., Novielli, N. and Quaranta, L.</td>
+	<td>Leveraging GPT-like LLMs to Automate Issue Labeling <p class="infolinks">[<a href="javascript:toggleInfo('2024-62','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 469-480&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644903">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-62" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-62,
+  author = {Colavito, Giuseppe and Lanubile, Filippo and Novielli, Nicole and Quaranta, Luigi},
+  title = {Leveraging GPT-like LLMs to Automate Issue Labeling},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {469-480},
+  doi = {https://doi.org/10.1145/3643991.3644903}
+}
+</pre></td>
+</tr>
+<tr id="2025-83-1" class="entry">
+	<td>Abedu, S., Abdellatif, A. and Shihab, E.</td>
+	<td>LLM-Based Chatbots for Mining Software Repositories: Challenges and Opportunities <p class="infolinks">[<a href="javascript:toggleInfo('2025-83-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>Proceedings of the 28th International Conference on Evaluation and Assessment in Software Engineering, pp. 201–210&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3661167.3661218">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-83-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-83-1,
+  author = {Abedu, Samuel and Abdellatif, Ahmad and Shihab, Emad},
+  title = {LLM-Based Chatbots for Mining Software Repositories: Challenges and Opportunities},
+  booktitle = {Proceedings of the 28th International Conference on Evaluation and Assessment in Software Engineering},
+  year = {2024},
+  pages = {201–210},
+  doi = {https://doi.org/10.1145/3661167.3661218}
+}
+</pre></td>
+</tr>
+<tr id="2024-65" class="entry">
+	<td>Alsayed, A.S., Khanh Dam, H. and Nguyen, C.</td>
+	<td>MicroRec: Leveraging Large Language Models for Microservice Recommendation <p class="infolinks">[<a href="javascript:toggleInfo('2024-65','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 419-430&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644916">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-65" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-65,
+  author = {Alsayed, Ahmed Saeed and Khanh Dam, Hoa and Nguyen, Chau},
+  title = {MicroRec: Leveraging Large Language Models for Microservice Recommendation},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {419-430},
+  doi = {https://doi.org/10.1145/3643991.3644916}
+}
+</pre></td>
+</tr>
+<tr id="2024-72" class="entry">
+	<td>Sagdic, E., Bayram, A. and Islam, M.R.</td>
+	<td>On the Taxonomy of Developers’ Discussion Topics with ChatGPT <p class="infolinks">[<a href="javascript:toggleInfo('2024-72','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 197-201&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3645080">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-72" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-72,
+  author = {Sagdic, Ertugrul and Bayram, Arda and Islam, Md Rakibul},
+  title = {On the Taxonomy of Developers’ Discussion Topics with ChatGPT},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {197-201},
+  doi = {https://doi.org/10.1145/3643991.3645080}
+}
+</pre></td>
+</tr>
+<tr id="2025-79-4" class="entry">
+	<td>Li, J., Farag&oacute;, D., Petrov, C. and Ahmed, I.</td>
+	<td>Only diff Is Not Enough: Generating Commit Messages Leveraging Reasoning and Action of Large Language Model <p class="infolinks">[<a href="javascript:toggleInfo('2025-79-4','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>Proc. ACM Softw. Eng.<br/>Vol. 1(FSE)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3643760">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-79-4" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2025-79-4,
+  author = {Li, Jiawei and Farag&oacute;, David and Petrov, Christian and Ahmed, Iftekhar},
+  title = {Only diff Is Not Enough: Generating Commit Messages Leveraging Reasoning and Action of Large Language Model},
+  journal = {Proc. ACM Softw. Eng.},
+  year = {2024},
+  volume = {1},
+  number = {FSE},
+  doi = {https://doi.org/10.1145/3643760}
+}
+</pre></td>
+</tr>
+<tr id="2024-76" class="entry">
+	<td>Jiang, W., Yasmin, J., Jones, J., Synovic, N., Kuo, J., Bielanski, N., Tian, Y., Thiruvathukal, G.K. and Davis, J.C.</td>
+	<td>PeaTMOSS: A Dataset and Initial Analysis of Pre-Trained Models in Open-Source Software <p class="infolinks">[<a href="javascript:toggleInfo('2024-76','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 431-443&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644907">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-76" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-76,
+  author = {Jiang, Wenxin and Yasmin, Jerin and Jones, Jason and Synovic, Nicholas and Kuo, Jiashen and Bielanski, Nathaniel and Tian, Yuan and Thiruvathukal, George K. and Davis, James C.},
+  title = {PeaTMOSS: A Dataset and Initial Analysis of Pre-Trained Models in Open-Source Software},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {431-443},
+  doi = {https://doi.org/10.1145/3643991.3644907}
+}
+</pre></td>
+</tr>
+<tr id="2025-79-5" class="entry">
+	<td>Pister, K., Paul, D.J., Brophy, P. and Joshi, I.</td>
+	<td>PromptSet: A Programmer’s Prompting Dataset <p class="infolinks">[<a href="javascript:toggleInfo('2025-79-5','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM International Workshop on Large Language Models for Code (LLM4Code), pp. 62-69&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643795.3648395">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-79-5" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-79-5,
+  author = {Pister, Kaiser and Paul, Dhruba Jyoti and Brophy, Patrick and Joshi, Ishan},
+  title = {PromptSet: A Programmer’s Prompting Dataset},
+  booktitle = {2024 IEEE/ACM International Workshop on Large Language Models for Code (LLM4Code)},
+  year = {2024},
+  pages = {62-69},
+  doi = {https://doi.org/10.1145/3643795.3648395}
+}
+</pre></td>
+</tr>
+<tr id="2024-82" class="entry">
+	<td>Sutoyo, E. and Capiluppi, A.</td>
+	<td>SATDAUG - A Balanced and Augmented Dataset for Detecting Self-Admitted Technical Debt <p class="infolinks">[<a href="javascript:toggleInfo('2024-82','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 289-293&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644880">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-82" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-82,
+  author = {Sutoyo, Edi and Capiluppi, Andrea},
+  title = {SATDAUG - A Balanced and Augmented Dataset for Detecting Self-Admitted Technical Debt},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {289-293},
+  doi = {https://doi.org/10.1145/3643991.3644880}
+}
+</pre></td>
+</tr>
+<tr id="2024-84" class="entry">
+	<td>Preda, A.-R., Mayr-Dorn, C., Mashkoor, A. and Egyed, A.</td>
+	<td>Supporting High-Level to Low-Level Requirements Coverage Reviewing with Large Language Models <p class="infolinks">[<a href="javascript:toggleInfo('2024-84','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 242-253&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644922">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-84" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-84,
+  author = {Preda, Anamaria-Roberta and Mayr-Dorn, Christoph and Mashkoor, Atif and Egyed, Alexander},
+  title = {Supporting High-Level to Low-Level Requirements Coverage Reviewing with Large Language Models},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {242-253},
+  doi = {https://doi.org/10.1145/3643991.3644922}
+}
+</pre></td>
+</tr>
+<tr id="2025-83-2" class="entry">
+	<td>Abedu, S., Khatoonabadi, S. and Shihab, E.</td>
+	<td>Synergizing LLMs and Knowledge Graphs: A Novel Approach to Software Repository-Related Question Answering <p class="infolinks">[<a href="javascript:toggleInfo('2025-83-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>arXiv preprint arXiv:2412.03815&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.48550/arXiv.2412.03815">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-83-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2025-83-2,
+  author = {Abedu, Samuel and Khatoonabadi, SayedHassan and Shihab, Emad},
+  title = {Synergizing LLMs and Knowledge Graphs: A Novel Approach to Software Repository-Related Question Answering},
+  journal = {arXiv preprint arXiv:2412.03815},
+  year = {2024},
+  doi = {https://doi.org/10.48550/arXiv.2412.03815}
+}
+</pre></td>
+</tr>
+<tr id="2024-90" class="entry">
+	<td>Liu, K., Han, Y., Liu, Y., Zhang, J.M., Chen, Z., Sarro, F., Huang, G. and Ma, Y.</td>
+	<td>TrickyBugs: A Dataset of Corner-case Bugs in Plausible Programs <p class="infolinks">[<a href="javascript:toggleInfo('2024-90','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 113-117&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644870">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-90" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-90,
+  author = {Liu, Kaibo and Han, Yudong and Liu, Yiyang and Zhang, Jie M. and Chen, Zhenpeng and Sarro, Federica and Huang, Gang and Ma, Yun},
+  title = {TrickyBugs: A Dataset of Corner-case Bugs in Plausible Programs},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {113-117},
+  doi = {https://doi.org/10.1145/3643991.3644870}
+}
+</pre></td>
+</tr>
+<tr id="2024-93" class="entry">
+	<td>Idialu, O.J., Mathews, N.S., Maipradit, R., Atlee, J.M. and Nagappan, M.</td>
+	<td>Whodunit: Classifying Code as Human Authored or GPT-4 generated- A case study on CodeChef problems <p class="infolinks">[<a href="javascript:toggleInfo('2024-93','bibtex')">BibTeX</a>]</p></td>
+	<td>2024</td>
+	<td>2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR), pp. 394-406&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3643991.3644926">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-93" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-93,
+  author = {Idialu, Oseremen Joy and Mathews, Noble Saji and Maipradit, Rungroj and Atlee, Joanne M. and Nagappan, Meiyappan},
+  title = {Whodunit: Classifying Code as Human Authored or GPT-4 generated- A case study on CodeChef problems},
+  booktitle = {2024 IEEE/ACM 21st International Conference on Mining Software Repositories (MSR)},
+  year = {2024},
+  pages = {394-406},
+  doi = {https://doi.org/10.1145/3643991.3644926}
+}
+</pre></td>
+</tr>
+<tr id="2023-3" class="entry">
+	<td>Shahin, M., Zahedi, M., Khalajzadeh, H. and Rezaei Nasab, A.</td>
+	<td>A Study of Gender Discussions in Mobile Apps <p class="infolinks">[<a href="javascript:toggleInfo('2023-3','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 598-610&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00086">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-3" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-3,
+  author = {Shahin, Mojtaba and Zahedi, Mansooreh and Khalajzadeh, Hourieh and Rezaei Nasab, Ali},
+  title = {A Study of Gender Discussions in Mobile Apps},
+  booktitle = {2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR)},
+  year = {2023},
+  pages = {598-610},
+  doi = {https://doi.org/10.1109/MSR59073.2023.00086}
+}
+</pre></td>
+</tr>
+<tr id="2024-84-1" class="entry">
+	<td>Ezzini, S., Abualhaija, S., Arora, C. and Sabetzadeh, M.</td>
+	<td>AI-based Question Answering Assistance for Analyzing Natural-language Requirements <p class="infolinks">[<a href="javascript:toggleInfo('2024-84-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE), pp. 1277-1289&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSE48619.2023.00113">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-84-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-84-1,
+  author = {Ezzini, Saad and Abualhaija, Sallam and Arora, Chetan and Sabetzadeh, Mehrdad},
+  title = {AI-based Question Answering Assistance for Analyzing Natural-language Requirements},
+  booktitle = {2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE)},
+  year = {2023},
+  pages = {1277-1289},
+  doi = {https://doi.org/10.1109/ICSE48619.2023.00113}
+}
+</pre></td>
+</tr>
+<tr id="2024-67-1" class="entry">
+	<td>Sarker, J., Turzo, A.K., Dong, M. and Bosu, A.</td>
+	<td>Automated Identification of Toxic Code Reviews Using ToxiCR <p class="infolinks">[<a href="javascript:toggleInfo('2024-67-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td><br/>Vol. 32(5)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/3583562">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-67-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2024-67-1,
+  author = {Sarker, Jaydeb and Turzo, Asif Kamal and Dong, Ming and Bosu, Amiangshu},
+  title = {Automated Identification of Toxic Code Reviews Using ToxiCR},
+  year = {2023},
+  volume = {32},
+  number = {5},
+  doi = {https://doi.org/10.1145/3583562}
+}
+</pre></td>
+</tr>
+<tr id="2023-10" class="entry">
+	<td>Bani Yusuf, I.N., Binte Abdul Jamal, D. and Jiang, L.</td>
+	<td>Automating Arduino Programming: From Hardware Setups to Sample Source Code Generation <p class="infolinks">[<a href="javascript:toggleInfo('2023-10','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 453-464&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00069">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-10" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-10,
+  author = {Bani Yusuf, Imam Nur and Binte Abdul Jamal, Diyanah and Jiang, Lingxiao},
+  title = {Automating Arduino Programming: From Hardware Setups to Sample Source Code Generation},
+  booktitle = {2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR)},
+  year = {2023},
+  pages = {453-464},
+  doi = {https://doi.org/10.1109/MSR59073.2023.00069}
+}
+</pre></td>
+</tr>
+<tr id="2025-53-2" class="entry">
+	<td>Yang, L., Xu, J., Zhang, Y., Zhang, H. and Bacchelli, A.</td>
+	<td>EvaCRC: Evaluating Code Review Comments <p class="infolinks">[<a href="javascript:toggleInfo('2025-53-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>Proceedings of the 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering, pp. 275–287&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3611643.3616245">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-53-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-53-2,
+  author = {Yang, Lanxin and Xu, Jinwei and Zhang, Yifan and Zhang, He and Bacchelli, Alberto},
+  title = {EvaCRC: Evaluating Code Review Comments},
+  booktitle = {Proceedings of the 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering},
+  year = {2023},
+  pages = {275–287},
+  doi = {https://doi.org/10.1145/3611643.3616245}
+}
+</pre></td>
+</tr>
+<tr id="2024-45-4" class="entry">
+	<td>Colavito, G., Lanubile, F. and Novielli, N.</td>
+	<td>Few-Shot Learning for Issue Report Classification <p class="infolinks">[<a href="javascript:toggleInfo('2024-45-4','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 2nd International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 16-19&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/NLBSE59153.2023.00011">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45-4" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-45-4,
+  author = {Colavito, Giuseppe and Lanubile, Filippo and Novielli, Nicole},
+  title = {Few-Shot Learning for Issue Report Classification},
+  booktitle = {2023 IEEE/ACM 2nd International Workshop on Natural Language-Based Software Engineering (NLBSE)},
+  year = {2023},
+  pages = {16-19},
+  doi = {https://doi.org/10.1109/NLBSE59153.2023.00011}
+}
+</pre></td>
+</tr>
+<tr id="2023-35" class="entry">
+	<td>Vargovich, J., Santos, F., Penney, J., Gerosa, M.A. and Steinmacher, I.</td>
+	<td>GiveMeLabeledIssues: An Open Source Issue Recommendation System <p class="infolinks">[<a href="javascript:toggleInfo('2023-35','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 402-406&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00061">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-35" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-35,
+  author = {Vargovich, Joseph and Santos, Fabio and Penney, Jacob and Gerosa, Marco A. and Steinmacher, Igor},
+  title = {GiveMeLabeledIssues: An Open Source Issue Recommendation System},
+  booktitle = {2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR)},
+  year = {2023},
+  pages = {402-406},
+  doi = {https://doi.org/10.1109/MSR59073.2023.00061}
+}
+</pre></td>
+</tr>
+<tr id="2022-54-1" class="entry">
+	<td>Fu, M. and Tantithamthavorn, C.</td>
+	<td>GPT2SP: A Transformer-Based Agile Story Point Estimation Approach <p class="infolinks">[<a href="javascript:toggleInfo('2022-54-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>IEEE Transactions on Software Engineering<br/>Vol. 49(2), pp. 611-625&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1109/TSE.2022.3158252">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2022-54-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2022-54-1,
+  author = {Fu, Michael and Tantithamthavorn, Chakkrit},
+  title = {GPT2SP: A Transformer-Based Agile Story Point Estimation Approach},
+  journal = {IEEE Transactions on Software Engineering},
+  year = {2023},
+  volume = {49},
+  number = {2},
+  pages = {611-625},
+  doi = {https://doi.org/10.1109/TSE.2022.3158252}
+}
+</pre></td>
+</tr>
+<tr id="2025-52-2" class="entry">
+	<td>Malkadi, A., Tayeb, A. and Haiduc, S.</td>
+	<td>Improving Code Extraction from Coding Screencasts Using a Code-Aware Encoder-Decoder Model <p class="infolinks">[<a href="javascript:toggleInfo('2025-52-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 38th IEEE/ACM International Conference on Automated Software Engineering (ASE), pp. 1492-1504&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ASE56229.2023.00184">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-52-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-52-2,
+  author = {Malkadi, Abdulkarim and Tayeb, Ahmad and Haiduc, Sonia},
+  title = {Improving Code Extraction from Coding Screencasts Using a Code-Aware Encoder-Decoder Model},
+  booktitle = {2023 38th IEEE/ACM International Conference on Automated Software Engineering (ASE)},
+  year = {2023},
+  pages = {1492-1504},
+  doi = {https://doi.org/10.1109/ASE56229.2023.00184}
+}
+</pre></td>
+</tr>
+<tr id="2025-49-1" class="entry">
+	<td>Bhat, M.M., Meng, R., Liu, Y., Zhou, Y. and Yavuz, S.</td>
+	<td>Investigating Answerability of LLMs for Long-Form Question Answering <p class="infolinks">[<a href="javascript:toggleInfo('2025-49-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>arXiv preprint arXiv:2309.08210&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.48550/arXiv.2309.08210">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-49-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2025-49-1,
+  author = {Bhat, Meghana Moorthy and Meng, Rui and Liu, Ye and Zhou, Yingbo and Yavuz, Semih},
+  title = {Investigating Answerability of LLMs for Long-Form Question Answering},
+  journal = {arXiv preprint arXiv:2309.08210},
+  year = {2023},
+  doi = {https://doi.org/10.48550/arXiv.2309.08210}
+}
+</pre></td>
+</tr>
+<tr id="2024-62-2" class="entry">
+	<td>Alhindi, W., Aleid, A., Jenhani, I. and Mkaouer, M.W.</td>
+	<td>Issue-Labeler: an ALBERT-based Jira Plugin for Issue Classification <p class="infolinks">[<a href="javascript:toggleInfo('2024-62-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 10th International Conference on Mobile Software Engineering and Systems (MOBILESoft), pp. 40-43&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MOBILSoft59058.2023.00012">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-62-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-62-2,
+  author = {Alhindi, Waleed and Aleid, Abdulrahman and Jenhani, Ilyes and Mkaouer, Mohamed Wiem},
+  title = {Issue-Labeler: an ALBERT-based Jira Plugin for Issue Classification},
+  booktitle = {2023 IEEE/ACM 10th International Conference on Mobile Software Engineering and Systems (MOBILESoft)},
+  year = {2023},
+  pages = {40-43},
+  doi = {https://doi.org/10.1109/MOBILSoft59058.2023.00012}
+}
+</pre></td>
+</tr>
+<tr id="2025-21-4" class="entry">
+	<td>Lu, J., Yu, L., Li, X., Yang, L. and Zuo, C.</td>
+	<td>LLaMA-Reviewer: Advancing Code Review Automation with Large Language Models through Parameter-Efficient Fine-Tuning <p class="infolinks">[<a href="javascript:toggleInfo('2025-21-4','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE 34th International Symposium on Software Reliability Engineering (ISSRE), pp. 647-658&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ISSRE59848.2023.00026">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-21-4" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-21-4,
+  author = {Lu, Junyi and Yu, Lei and Li, Xiaojia and Yang, Li and Zuo, Chun},
+  title = {LLaMA-Reviewer: Advancing Code Review Automation with Large Language Models through Parameter-Efficient Fine-Tuning},
+  booktitle = {2023 IEEE 34th International Symposium on Software Reliability Engineering (ISSRE)},
+  year = {2023},
+  pages = {647-658},
+  doi = {https://doi.org/10.1109/ISSRE59848.2023.00026}
+}
+</pre></td>
+</tr>
+<tr id="2023-43" class="entry">
+	<td>Tony, C., Mutas, M., Ferreyra, N.E.D. and Scandariato, R.</td>
+	<td>LLMSecEval: A Dataset of Natural Language Prompts for Security Evaluations <p class="infolinks">[<a href="javascript:toggleInfo('2023-43','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 588-592&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00084">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-43" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-43,
+  author = {Tony, Catherine and Mutas, Markus and Ferreyra, Nicolás E. Díaz and Scandariato, Riccardo},
+  title = {LLMSecEval: A Dataset of Natural Language Prompts for Security Evaluations},
+  booktitle = {2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR)},
+  year = {2023},
+  pages = {588-592},
+  doi = {https://doi.org/10.1109/MSR59073.2023.00084}
+}
+</pre></td>
+</tr>
+<tr id="2023-47" class="entry">
+	<td>Saberi, I. and Fard, F.H.</td>
+	<td>Model-Agnostic Syntactical Information for Pre-Trained Programming Language Models <p class="infolinks">[<a href="javascript:toggleInfo('2023-47','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 183-193&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00036">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-47" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-47,
+  author = {Saberi, Iman and Fard, Fatemeh H.},
+  title = {Model-Agnostic Syntactical Information for Pre-Trained Programming Language Models},
+  booktitle = {2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR)},
+  year = {2023},
+  pages = {183-193},
+  doi = {https://doi.org/10.1109/MSR59073.2023.00036}
+}
+</pre></td>
+</tr>
+<tr id="2023-54" class="entry">
+	<td>Clairine Irsan, I., Zhang, T., Thung, F., Kim, K. and Lo, D.</td>
+	<td>Picaso: Enhancing API Recommendations with Relevant Stack Overflow Posts <p class="infolinks">[<a href="javascript:toggleInfo('2023-54','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 92-103&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00025">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-54" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-54,
+  author = {Clairine Irsan, Ivana and Zhang, Ting and Thung, Ferdian and Kim, Kisub and Lo, David},
+  title = {Picaso: Enhancing API Recommendations with Relevant Stack Overflow Posts},
+  booktitle = {2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR)},
+  year = {2023},
+  pages = {92-103},
+  doi = {https://doi.org/10.1109/MSR59073.2023.00025}
+}
+</pre></td>
+</tr>
+<tr id="2023-44-1" class="entry">
+	<td>Ahmed, T., Ghosh, S., Bansal, C., Zimmermann, T., Zhang, X. and Rajmohan, S.</td>
+	<td>Recommending Root-Cause and Mitigation Steps for Cloud Incidents using Large Language Models <p class="infolinks">[<a href="javascript:toggleInfo('2023-44-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE), pp. 1737-1749&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSE48619.2023.00149">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-44-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-44-1,
+  author = {Ahmed, Toufique and Ghosh, Supriyo and Bansal, Chetan and Zimmermann, Thomas and Zhang, Xuchao and Rajmohan, Saravan},
+  title = {Recommending Root-Cause and Mitigation Steps for Cloud Incidents using Large Language Models},
+  booktitle = {2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE)},
+  year = {2023},
+  pages = {1737-1749},
+  doi = {https://doi.org/10.1109/ICSE48619.2023.00149}
+}
+</pre></td>
+</tr>
+<tr id="2023-58" class="entry">
+	<td>Diamantopoulos, T., Nastos, D.-N. and Symeonidis, A.</td>
+	<td>Semantically-enriched Jira Issue Tracking Data <p class="infolinks">[<a href="javascript:toggleInfo('2023-58','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR), pp. 218-222&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/MSR59073.2023.00039">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-58" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-58,
+  author = {Diamantopoulos, Themistoklis and Nastos, Dimitrios-Nikitas and Symeonidis, Andreas},
+  title = {Semantically-enriched Jira Issue Tracking Data},
+  booktitle = {2023 IEEE/ACM 20th International Conference on Mining Software Repositories (MSR)},
+  year = {2023},
+  pages = {218-222},
+  doi = {https://doi.org/10.1109/MSR59073.2023.00039}
+}
+</pre></td>
+</tr>
+<tr id="2023-3-2" class="entry">
+	<td>Khalajzadeh, H., Shahin, M., Obie, H.O., Agrawal, P. and Grundy, J.</td>
+	<td>Supporting Developers in Addressing Human-Centric Issues in Mobile Apps <p class="infolinks">[<a href="javascript:toggleInfo('2023-3-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2023</td>
+	<td>IEEE Transactions on Software Engineering<br/>Vol. 49(4), pp. 2149-2168&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1109/TSE.2022.3212329">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-3-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2023-3-2,
+  author = {Khalajzadeh, Hourieh and Shahin, Mojtaba and Obie, Humphrey O. and Agrawal, Pragya and Grundy, John},
+  title = {Supporting Developers in Addressing Human-Centric Issues in Mobile Apps},
+  journal = {IEEE Transactions on Software Engineering},
+  year = {2023},
+  volume = {49},
+  number = {4},
+  pages = {2149-2168},
+  doi = {https://doi.org/10.1109/TSE.2022.3212329}
+}
+</pre></td>
+</tr>
+<tr id="2023-3-1" class="entry">
+	<td>Nema, P., Anthonysamy, P., Taft, N. and Peddinti, S.T.</td>
+	<td>Analyzing User Perspectives on Mobile App Privacy at Scale <p class="infolinks">[<a href="javascript:toggleInfo('2023-3-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 112-124&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3510003.3510079">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-3-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-3-1,
+  author = {Nema, Preksha and Anthonysamy, Pauline and Taft, Nina and Peddinti, Sai Teia},
+  title = {Analyzing User Perspectives on Mobile App Privacy at Scale},
+  booktitle = {2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE)},
+  year = {2022},
+  pages = {112-124},
+  doi = {https://doi.org/10.1145/3510003.3510079}
+}
+</pre></td>
+</tr>
+<tr id="2025-21-1" class="entry">
+	<td>Li, L., Yang, L., Jiang, H., Yan, J., Luo, T., Hua, Z., Liang, G. and Zuo, C.</td>
+	<td>AUGER: Automatically Generating Review Comments with Pre-training Models <p class="infolinks">[<a href="javascript:toggleInfo('2025-21-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering, pp. 1009–1021&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3540250.3549099">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-21-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-21-1,
+  author = {Li, Lingwei and Yang, Li and Jiang, Huaxi and Yan, Jun and Luo, Tiejian and Hua, Zihan and Liang, Geng and Zuo, Chun},
+  title = {AUGER: Automatically Generating Review Comments with Pre-training Models},
+  booktitle = {Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering},
+  year = {2022},
+  pages = {1009–1021},
+  doi = {https://doi.org/10.1145/3540250.3549099}
+}
+</pre></td>
+</tr>
+<tr id="2024-45-1" class="entry">
+	<td>Zhang, T., Irsan, I.C., Thung, F., Han, D., Lo, D. and Jiang, L.</td>
+	<td>Automatic Pull Request Title Generation <p class="infolinks">[<a href="javascript:toggleInfo('2024-45-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE International Conference on Software Maintenance and Evolution (ICSME), pp. 71-81&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSME55016.2022.00015">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-45-1,
+  author = {Zhang, Ting and Irsan, Ivana Clairine and Thung, Ferdian and Han, DongGyun and Lo, David and Jiang, Lingxiao},
+  title = {Automatic Pull Request Title Generation},
+  booktitle = {2022 IEEE International Conference on Software Maintenance and Evolution (ICSME)},
+  year = {2022},
+  pages = {71-81},
+  doi = {https://doi.org/10.1109/ICSME55016.2022.00015}
+}
+</pre></td>
+</tr>
+<tr id="2025-21-2" class="entry">
+	<td>Li, Z., Lu, S., Guo, D., Duan, N., Jannu, S., Jenks, G., Majumder, D., Green, J., Svyatkovskiy, A., Fu, S. and Sundaresan, N.</td>
+	<td>Automating Code Review Activities by Large-Scale Pre-training <p class="infolinks">[<a href="javascript:toggleInfo('2025-21-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering, pp. 1035–1047&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3540250.3549081">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-21-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-21-2,
+  author = {Li, Zhiyu and Lu, Shuai and Guo, Daya and Duan, Nan and Jannu, Shailesh and Jenks, Grant and Majumder, Deep and Green, Jared and Svyatkovskiy, Alexey and Fu, Shengyu and Sundaresan, Neel},
+  title = {Automating Code Review Activities by Large-Scale Pre-training},
+  booktitle = {Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering},
+  year = {2022},
+  pages = {1035–1047},
+  doi = {https://doi.org/10.1145/3540250.3549081}
+}
+</pre></td>
+</tr>
+<tr id="2024-45-2" class="entry">
+	<td>Siddiq, M.L. and Santos, J.C.S.</td>
+	<td>BERT-Based GitHub Issue Report Classification <p class="infolinks">[<a href="javascript:toggleInfo('2024-45-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 33-36&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3528588.3528660">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-45-2,
+  author = {Siddiq, Mohammed Latif and Santos, Joanna C. S.},
+  title = {BERT-Based GitHub Issue Report Classification},
+  booktitle = {2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE)},
+  year = {2022},
+  pages = {33-36},
+  doi = {https://doi.org/10.1145/3528588.3528660}
+}
+</pre></td>
+</tr>
+<tr id="2025-37-2" class="entry">
+	<td>Aranovich, R., Wu, M., Yu, D., Katsy, K., Ahmadnia, B., Bishop, M., Filkov, V. and Sagae, K.</td>
+	<td>Beyond NVD: Cybersecurity meets the Semantic Web. <p class="infolinks">[<a href="javascript:toggleInfo('2025-37-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Proceedings of the 2021 New Security Paradigms Workshop, pp. 59–69&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3498891.3501259">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-37-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-37-2,
+  author = {Aranovich, Ra&uacute;l and Wu, Muting and Yu, Dian and Katsy, Katya and Ahmadnia, Benyamin and Bishop, Matthew and Filkov, Vladimir and Sagae, Kenji},
+  title = {Beyond NVD: Cybersecurity meets the Semantic Web.},
+  booktitle = {Proceedings of the 2021 New Security Paradigms Workshop},
+  year = {2022},
+  pages = {59–69},
+  doi = {https://doi.org/10.1145/3498891.3501259}
+}
+</pre></td>
+</tr>
+<tr id="2024-45-3" class="entry">
+	<td>Izadi, M.</td>
+	<td>CatIss: An Intelligent Tool for Categorizing Issues Reports using Transformers <p class="infolinks">[<a href="javascript:toggleInfo('2024-45-3','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 44-47&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3528588.3528662">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45-3" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-45-3,
+  author = {Izadi, Maliheh},
+  title = {CatIss: An Intelligent Tool for Categorizing Issues Reports using Transformers},
+  booktitle = {2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE)},
+  year = {2022},
+  pages = {44-47},
+  doi = {https://doi.org/10.1145/3528588.3528662}
+}
+</pre></td>
+</tr>
+<tr id="2023-54-2" class="entry">
+	<td>Wei, M., Harzevili, N.S., Huang, Y., Wang, J. and Wang, S.</td>
+	<td>CLEAR: Contrastive Learning for API Recommendation <p class="infolinks">[<a href="javascript:toggleInfo('2023-54-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 376-387&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3510003.3510159">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-54-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-54-2,
+  author = {Wei, Moshi and Harzevili, Nima Shiri and Huang, Yuchao and Wang, Junjie and Wang, Song},
+  title = {CLEAR: Contrastive Learning for API Recommendation},
+  booktitle = {2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE)},
+  year = {2022},
+  pages = {376-387},
+  doi = {https://doi.org/10.1145/3510003.3510159}
+}
+</pre></td>
+</tr>
+<tr id="2025-52-1" class="entry">
+	<td>Yang, C., Thung, F. and Lo, D.</td>
+	<td>Efficient Search of Live-Coding Screencasts from Online Videos <p class="infolinks">[<a href="javascript:toggleInfo('2025-52-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER), pp. 73-77&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/SANER53432.2022.00021">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-52-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-52-1,
+  author = {Yang, Chengran and Thung, Ferdian and Lo, David},
+  title = {Efficient Search of Live-Coding Screencasts from Online Videos},
+  booktitle = {2022 IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER)},
+  year = {2022},
+  pages = {73-77},
+  doi = {https://doi.org/10.1109/SANER53432.2022.00021}
+}
+</pre></td>
+</tr>
+<tr id="2025-53-3" class="entry">
+	<td>Rahman, S., Koana, U.A. and Nayebi, M.</td>
+	<td>Example Driven Code Review Explanation <p class="infolinks">[<a href="javascript:toggleInfo('2025-53-3','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Proceedings of the 16th ACM / IEEE International Symposium on Empirical Software Engineering and Measurement, pp. 307–312&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3544902.3546639">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-53-3" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-53-3,
+  author = {Rahman, Shadikur and Koana, Umme Ayman and Nayebi, Maleknaz},
+  title = {Example Driven Code Review Explanation},
+  booktitle = {Proceedings of the 16th ACM / IEEE International Symposium on Empirical Software Engineering and Measurement},
+  year = {2022},
+  pages = {307–312},
+  doi = {https://doi.org/10.1145/3544902.3546639}
+}
+</pre></td>
+</tr>
+<tr id="2024-45-6" class="entry">
+	<td>Bharadwaj, S. and Kadam, T.</td>
+	<td>GitHub Issue Classification Using BERT-Style Models <p class="infolinks">[<a href="javascript:toggleInfo('2024-45-6','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 40-43&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3528588.3528663">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45-6" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-45-6,
+  author = {Bharadwaj, Shikhar and Kadam, Tushar},
+  title = {GitHub Issue Classification Using BERT-Style Models},
+  booktitle = {2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE)},
+  year = {2022},
+  pages = {40-43},
+  doi = {https://doi.org/10.1145/3528588.3528663}
+}
+</pre></td>
+</tr>
+<tr id="2024-62-1" class="entry">
+	<td>Colavito, G., Lanubile, F. and Novielli, N.</td>
+	<td>Issue Report Classification Using Pre-trained Language Models <p class="infolinks">[<a href="javascript:toggleInfo('2024-62-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE), pp. 29-32&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3528588.3528659">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-62-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-62-1,
+  author = {Colavito, Giuseppe and Lanubile, Filippo and Novielli, Nicole},
+  title = {Issue Report Classification Using Pre-trained Language Models},
+  booktitle = {2022 IEEE/ACM 1st International Workshop on Natural Language-Based Software Engineering (NLBSE)},
+  year = {2022},
+  pages = {29-32},
+  doi = {https://doi.org/10.1145/3528588.3528659}
+}
+</pre></td>
+</tr>
+<tr id="2024-45-8" class="entry">
+	<td>Zhang, T., Irsan, I.C., Thung, F., Han, D., Lo, D. and Jiang, L.</td>
+	<td>iTiger: an automatic issue title generation tool <p class="infolinks">[<a href="javascript:toggleInfo('2024-45-8','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering, pp. 1637–1641&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3540250.3558934">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45-8" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-45-8,
+  author = {Zhang, Ting and Irsan, Ivana Clairine and Thung, Ferdian and Han, DongGyun and Lo, David and Jiang, Lingxiao},
+  title = {iTiger: an automatic issue title generation tool},
+  booktitle = {Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering},
+  year = {2022},
+  pages = {1637–1641},
+  doi = {https://doi.org/10.1145/3540250.3558934}
+}
+</pre></td>
+</tr>
+<tr id="2022-69" class="entry">
+	<td>Obie, H.O., Ilekura, I., Du, H., Shahin, M., Grundy, J., Li, L., Whittle, J. and Turhan, B.</td>
+	<td>On the Violation of Honesty in Mobile Apps: Automated Detection and Categories <p class="infolinks">[<a href="javascript:toggleInfo('2022-69','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 19th International Conference on Mining Software Repositories (MSR), pp. 321-332&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3524842.3527937">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2022-69" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2022-69,
+  author = {Obie, Humphrey O. and Ilekura, Idowu and Du, Hung and Shahin, Mojtaba and Grundy, John and Li, Li and Whittle, Jon and Turhan, Burak},
+  title = {On the Violation of Honesty in Mobile Apps: Automated Detection and Categories},
+  booktitle = {2022 IEEE/ACM 19th International Conference on Mining Software Repositories (MSR)},
+  year = {2022},
+  pages = {321-332},
+  doi = {https://doi.org/10.1145/3524842.3527937}
+}
+</pre></td>
+</tr>
+<tr id="2024-45-7" class="entry">
+	<td>Wang, J., Zhang, X., Chen, L. and Xie, X.</td>
+	<td>Personalizing label prediction for GitHub issues <p class="infolinks">[<a href="javascript:toggleInfo('2024-45-7','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Information and Software Technology<br/>Vol. 145, pp. 106845&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1016/j.infsof.2022.106845">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45-7" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2024-45-7,
+  author = {Jun Wang and Xiaofang Zhang and Lin Chen and Xiaoyuan Xie},
+  title = {Personalizing label prediction for GitHub issues},
+  journal = {Information and Software Technology},
+  year = {2022},
+  volume = {145},
+  pages = {106845},
+  doi = {https://doi.org/10.1016/j.infsof.2022.106845}
+}
+</pre></td>
+</tr>
+<tr id="2023-35-2" class="entry">
+	<td>Izadi, M., Akbari, K. and Heydarnoori, A.</td>
+	<td>Predicting the objective and priority of issue reports in software repositories <p class="infolinks">[<a href="javascript:toggleInfo('2023-35-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Empirical Software Engineering<br/>Vol. 27(2), pp. 50&nbsp;</td>
+	<td>article</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_2023-35-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2023-35-2,
+  author = {Izadi, Maliheh and Akbari, Kiana and Heydarnoori, Abbas},
+  title = {Predicting the objective and priority of issue reports in software repositories},
+  journal = {Empirical Software Engineering},
+  year = {2022},
+  volume = {27},
+  number = {2},
+  pages = {50}
+}
+</pre></td>
+</tr>
+<tr id="2022-98" class="entry">
+	<td>Pasuksmit, J., Thongtanunam, P. and Karunasekera, S.</td>
+	<td>Towards Reliable Agile Iterative Planning via Predicting Documentation Changes of Work Items <p class="infolinks">[<a href="javascript:toggleInfo('2022-98','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 19th International Conference on Mining Software Repositories (MSR), pp. 35-47&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3524842.3528445">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2022-98" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2022-98,
+  author = {Pasuksmit, Jirat and Thongtanunam, Patanamon and Karunasekera, Shanika},
+  title = {Towards Reliable Agile Iterative Planning via Predicting Documentation Changes of Work Items},
+  booktitle = {2022 IEEE/ACM 19th International Conference on Mining Software Repositories (MSR)},
+  year = {2022},
+  pages = {35-47},
+  doi = {https://doi.org/10.1145/3524842.3528445}
+}
+</pre></td>
+</tr>
+<tr id="2025-21-5" class="entry">
+	<td>Tufano, R., Masiero, S., Mastropaolo, A., Pascarella, L., Poshyvanyk, D. and Bavota, G.</td>
+	<td>Using Pre-Trained Models to Boost Code Review Automation <p class="infolinks">[<a href="javascript:toggleInfo('2025-21-5','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 2291-2302&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3510003.3510621">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-21-5" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-21-5,
+  author = {Tufano, Rosalia and Masiero, Simone and Mastropaolo, Antonio and Pascarella, Luca and Poshyvanyk, Denys and Bavota, Gabriele},
+  title = {Using Pre-Trained Models to Boost Code Review Automation},
+  booktitle = {2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE)},
+  year = {2022},
+  pages = {2291-2302},
+  doi = {https://doi.org/10.1145/3510003.3510621}
+}
+</pre></td>
+</tr>
+<tr id="2023-3-3" class="entry">
+	<td>Wang, Y., Wang, J., Zhang, H., Ming, X., Shi, L. and Wang, Q.</td>
+	<td>Where is Your App Frustrating Users? <p class="infolinks">[<a href="javascript:toggleInfo('2023-3-3','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE), pp. 2427-2439&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3510003.3510189">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-3-3" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-3-3,
+  author = {Wang, Yawen and Wang, Junjie and Zhang, Hongyu and Ming, Xuran and Shi, Lin and Wang, Qing},
+  title = {Where is Your App Frustrating Users?},
+  booktitle = {2022 IEEE/ACM 44th International Conference on Software Engineering (ICSE)},
+  year = {2022},
+  pages = {2427-2439},
+  doi = {https://doi.org/10.1145/3510003.3510189}
+}
+</pre></td>
+</tr>
+<tr id="2023-54-1" class="entry">
+	<td>Kang, Y., Wang, Z., Zhang, H., Chen, J. and You, H.</td>
+	<td>APIRecX: Cross-Library API Recommendation via Pre-Trained Language Model <p class="infolinks">[<a href="javascript:toggleInfo('2023-54-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 3425-3436&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2021.emnlp-main.275">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-54-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2023-54-1,
+  author = {Kang, Yuning and Wang, Zan  and Zhang, Hongyu and Chen, Junjie and You, Hanmo},
+  title = {APIRecX: Cross-Library API Recommendation via Pre-Trained Language Model},
+  booktitle = {Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing},
+  year = {2021},
+  pages = {3425-3436},
+  doi = {https://doi.org/10.18653/v1/2021.emnlp-main.275}
+}
+</pre></td>
+</tr>
+<tr id="2022-98-1" class="entry">
+	<td>Haering, M., Stanik, C. and Maalej, W.</td>
+	<td>Automatically Matching Bug Reports With Related App Reviews <p class="infolinks">[<a href="javascript:toggleInfo('2022-98-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>2021 IEEE/ACM 43rd International Conference on Software Engineering (ICSE), pp. 970-981&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSE43902.2021.00092">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2022-98-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2022-98-1,
+  author = {Haering, Marlo and Stanik, Christoph and Maalej, Walid},
+  title = {Automatically Matching Bug Reports With Related App Reviews},
+  booktitle = {2021 IEEE/ACM 43rd International Conference on Software Engineering (ICSE)},
+  year = {2021},
+  pages = {970-981},
+  doi = {https://doi.org/10.1109/ICSE43902.2021.00092}
+}
+</pre></td>
+</tr>
+<tr id="2024-45-5" class="entry">
+	<td>Schick, T. and Sch&uuml;tze, H.</td>
+	<td>Generating Datasets with Pretrained Language Models <p class="infolinks">[<a href="javascript:toggleInfo('2024-45-5','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 6943-6951&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2021.emnlp-main.555">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-45-5" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-45-5,
+  author = {Schick, Timo and Sch&uuml;tze, Hinrich},
+  title = {Generating Datasets with Pretrained Language Models},
+  booktitle = {Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing},
+  year = {2021},
+  pages = {6943-6951},
+  doi = {https://doi.org/10.18653/v1/2021.emnlp-main.555}
+}
+</pre></td>
+</tr>
+<tr id="2023-35-1" class="entry">
+	<td>Wang, J., Zhang, X. and Chen, L.</td>
+	<td>How well do pre-trained contextual language representations recommend labels for GitHub issues? <p class="infolinks">[<a href="javascript:toggleInfo('2023-35-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>Knowledge-Based Systems<br/>Vol. 232, pp. 107476&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1016/j.knosys.2021.107476">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2023-35-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2023-35-1,
+  author = {Jun Wang and Xiaofang Zhang and Lin Chen},
+  title = {How well do pre-trained contextual language representations recommend labels for GitHub issues?},
+  journal = {Knowledge-Based Systems},
+  year = {2021},
+  volume = {232},
+  pages = {107476},
+  doi = {https://doi.org/10.1016/j.knosys.2021.107476}
+}
+</pre></td>
+</tr>
+<tr id="2022-98-2" class="entry">
+	<td>Kula, E., Deursen, A.v. and Gousios, G.</td>
+	<td>Modeling Team Dynamics for the Characterization and Prediction of Delays in User Stories <p class="infolinks">[<a href="javascript:toggleInfo('2022-98-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>2021 36th IEEE/ACM International Conference on Automated Software Engineering (ASE), pp. 991-1002&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ASE51524.2021.9678939">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2022-98-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2022-98-2,
+  author = {Kula, Elvan and Deursen, Arie van and Gousios, Georgios},
+  title = {Modeling Team Dynamics for the Characterization and Prediction of Delays in User Stories},
+  booktitle = {2021 36th IEEE/ACM International Conference on Automated Software Engineering (ASE)},
+  year = {2021},
+  pages = {991-1002},
+  doi = {https://doi.org/10.1109/ASE51524.2021.9678939}
+}
+</pre></td>
+</tr>
+<tr id="2025-82-1" class="entry">
+	<td>Henkel, J., Silva, D., Teixeira, L., d’Amorim , M. and Reps, T.</td>
+	<td>Shipwright: A Human-in-the-Loop System for Dockerfile Repair <p class="infolinks">[<a href="javascript:toggleInfo('2025-82-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>2021 IEEE/ACM 43rd International Conference on Software Engineering: Companion Proceedings (ICSE-Companion), pp. 198-199&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICSE-Companion52605.2021.00087">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2025-82-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2025-82-1,
+  author = {Henkel, Jordan and Silva, Denini and Teixeira, Leopoldo and d’Amorim, Marcelo and Reps, Thomas},
+  title = {Shipwright: A Human-in-the-Loop System for Dockerfile Repair},
+  booktitle = {2021 IEEE/ACM 43rd International Conference on Software Engineering: Companion Proceedings (ICSE-Companion)},
+  year = {2021},
+  pages = {198-199},
+  doi = {https://doi.org/10.1109/ICSE-Companion52605.2021.00087}
+}
+</pre></td>
+</tr>
+<tr id="2024-67-2" class="entry">
+	<td>Cheriyan, J., Savarimuthu, B.T.R. and Cranefield, S.</td>
+	<td>Towards offensive language detection and reduction in four Software Engineering communities <p class="infolinks">[<a href="javascript:toggleInfo('2024-67-2','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>Proceedings of the 25th International Conference on Evaluation and Assessment in Software Engineering, pp. 254–259&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3463274.3463805">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-67-2" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-67-2,
+  author = {Cheriyan, Jithin and Savarimuthu, Bastin Tony Roy and Cranefield, Stephen},
+  title = {Towards offensive language detection and reduction in four Software Engineering communities},
+  booktitle = {Proceedings of the 25th International Conference on Evaluation and Assessment in Software Engineering},
+  year = {2021},
+  pages = {254–259},
+  doi = {https://doi.org/10.1145/3463274.3463805}
+}
+</pre></td>
+</tr>
+<tr id="2024-82-3" class="entry">
+	<td>Yang, Y., Malaviya, C., Fernandez, J., Swayamdipta, S., Le Bras, R., Wang, J.-P., Bhagavatula, C., Choi, Y. and Downey, D.</td>
+	<td>Generative Data Augmentation for Commonsense Reasoning <p class="infolinks">[<a href="javascript:toggleInfo('2024-82-3','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>Findings of the Association for Computational Linguistics: EMNLP 2020, pp. 1008-1025&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.18653/v1/2020.findings-emnlp.90">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-82-3" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-82-3,
+  author = {Yang, Yiben and Malaviya, Chaitanya and Fernandez, Jared and Swayamdipta, Swabha and Le Bras, Ronan and Wang, Ji-Ping and Bhagavatula, Chandra and Choi, Yejin and Downey, Doug},
+  title = {Generative Data Augmentation for Commonsense Reasoning},
+  booktitle = {Findings of the Association for Computational Linguistics: EMNLP 2020},
+  year = {2020},
+  pages = {1008-1025},
+  doi = {https://doi.org/10.18653/v1/2020.findings-emnlp.90}
+}
+</pre></td>
+</tr>
+<tr id="2024-14-1" class="entry">
+	<td>Sarwar, M.U., Zafar, S., Mkaouer, M.W., Walia, G.S. and Malik, M.Z.</td>
+	<td>Multi-label Classification of Commit Messages using Transfer Learning <p class="infolinks">[<a href="javascript:toggleInfo('2024-14-1','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>2020 IEEE International Symposium on Software Reliability Engineering Workshops (ISSREW), pp. 37-42&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ISSREW51248.2020.00034">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_2024-14-1" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{2024-14-1,
+  author = {Sarwar, Muhammad Usman and Zafar, Sarim and Mkaouer, Mohamed Wiem and Walia, Gursimran Singh and Malik, Muhammad Zubair},
+  title = {Multi-label Classification of Commit Messages using Transfer Learning},
+  booktitle = {2020 IEEE International Symposium on Software Reliability Engineering Workshops (ISSREW)},
+  year = {2020},
+  pages = {37-42},
+  doi = {https://doi.org/10.1109/ISSREW51248.2020.00034}
+}
+</pre></td>
+</tr>
 </tbody>
 </table>
 <footer>
- <small>Created by <a href="https://www.jabref.org">JabRef</a> on 2026/02/06.</small>
+ <small>Created by <a href="https://www.jabref.org">JabRef</a> on 2026/02/09.</small>
 </footer>
-
 <!-- file generated by JabRef -->
-
 </body>
 </html>
